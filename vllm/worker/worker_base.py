@@ -273,7 +273,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             num_steps)
 
         if not get_pp_group().is_last_rank:
-            get_pp_group().send_tensor_dict(output[0].tensors)
+            get_pp_group().send_tensor_dict(output.tensors)
             return [None]
 
         # Worker only supports single-step execution. Wrap the output in a
