@@ -1006,6 +1006,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         assert model_input.attn_metadata is not None
         prefill_meta = model_input.attn_metadata.prefill_metadata
         decode_meta = model_input.attn_metadata.decode_metadata
+        # TODO(andoorve): We can remove this once all
+        # virtual engines share the same kv cache.
         virtual_engine = model_input.virtual_engine
         if prefill_meta is None and decode_meta.use_cuda_graph:
             assert model_input.input_tokens is not None

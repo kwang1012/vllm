@@ -123,18 +123,13 @@ class ExecutorAsyncBase(ExecutorBase):
         vision_language_config: Optional[VisionLanguageConfig],
         speculative_config: Optional[SpeculativeConfig],
     ) -> None:
-        self.lock = asyncio.Lock()
+        # This locks each pipeline parallel stage so multiple virtual engines
+        # can't execute on the same stage at the same time
         self.pp_locks = [
             asyncio.Lock()
             for _ in range(parallel_config.pipeline_parallel_size)
-        ]  # This locks each pipeline parallel stage so multiple
-        # virtual engines can't execute on the same stage at the same time
-        self.pp_semaphores = [
-            asyncio.Semaphore(2)
-            for _ in range(parallel_config.pipeline_parallel_size)
-        ]  # This semaphore is used to limit the number of pipeline
-        # parallel stages that can be active at the same time
-        # for a given virtual engine
+        ]
+
         super().__init__(model_config, cache_config, parallel_config,
                          scheduler_config, device_config, load_config,
                          lora_config, vision_language_config,

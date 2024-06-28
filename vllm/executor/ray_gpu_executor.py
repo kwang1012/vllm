@@ -190,8 +190,13 @@ class RayGPUExecutor(DistributedGPUExecutor):
                           max_concurrent_workers=self.parallel_config.
                           max_parallel_loading_workers)
 
-        self.tp_driver_workers = []
-        self.tp_parallel_workers = []
+        # This is the list of workers that are rank 0 of each TP group EXCEPT
+        # global rank 0. These are the workers that will broadcast to the
+        # rest of the workers.
+        self.tp_driver_workers: List[RayWorkerWrapper] = []
+        # This is the list of workers that are not drivers and not the first
+        # worker in a TP group. These are the workers that will be broadcasted to.
+        self.non_driver_workers: List[RayWorkerWrapper] = []
 
         for pp_rank in range(self.parallel_config.pipeline_parallel_size):
             for tp_rank in range(self.parallel_config.tensor_parallel_size):
@@ -202,7 +207,7 @@ class RayGPUExecutor(DistributedGPUExecutor):
                 elif rank % self.parallel_config.tensor_parallel_size == 0:
                     self.tp_driver_workers.append(self.workers[rank - 1])
                 else:
-                    self.tp_parallel_workers.append(self.workers[rank - 1])
+                    self.non_driver_workers.append(self.workers[rank - 1])
 
     def _driver_execute_model(
         self, execute_model_req: Optional[ExecuteModelRequest]
@@ -246,7 +251,7 @@ class RayGPUExecutor(DistributedGPUExecutor):
 
         count = len(self.workers) if not \
             async_run_tensor_parallel_workers_only \
-            else len(self.tp_parallel_workers)
+            else len(self.non_driver_workers)
         all_worker_args = repeat(args, count) if all_args is None \
             else islice(all_args, 1, None)
         all_worker_kwargs = repeat(kwargs, count) if all_kwargs is None \
@@ -260,21 +265,15 @@ class RayGPUExecutor(DistributedGPUExecutor):
             ray_worker_outputs = []
         else:
             # Start the ray workers first.
+            ray_workers = self.workers
             if async_run_tensor_parallel_workers_only:
-                ray_worker_outputs = [
-                    worker.execute_method.remote(method, *worker_args,
-                                                 **worker_kwargs)
-                    for (worker, worker_args, worker_kwargs
-                         ) in zip(self.tp_parallel_workers, all_worker_args,
-                                  all_worker_kwargs)
-                ]
-            else:
-                ray_worker_outputs = [
-                    worker.execute_method.remote(method, *worker_args,
-                                                 **worker_kwargs)
-                    for (worker, worker_args, worker_kwargs) in zip(
-                        self.workers, all_worker_args, all_worker_kwargs)
-                ]
+                ray_workers = self.non_driver_workers
+            ray_worker_outputs = [
+                worker.execute_method.remote(method, *worker_args,
+                                                **worker_kwargs)
+                for (worker, worker_args, worker_kwargs
+                        ) in zip(ray_workers, all_worker_args, all_worker_kwargs)
+            ]
 
         if async_run_tensor_parallel_workers_only:
             # Just return futures
@@ -365,11 +364,13 @@ class RayGPUExecutorAsync(RayGPUExecutor, DistributedGPUExecutorAsync):
                                         "execute_model", execute_model_req)))
 
         results = await asyncio.gather(*tasks)
+
+        # Only the last PP stage has the final results.
         return results[-1]
 
     async def _start_worker_execution_loop(self):
         coros = [
             worker.execute_method.remote("start_worker_execution_loop")
-            for worker in self.tp_parallel_workers
+            for worker in self.non_driver_workers
         ]
         return await asyncio.gather(*coros)

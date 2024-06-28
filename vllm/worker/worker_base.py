@@ -187,9 +187,11 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     @abstractmethod
     def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
         """
-        Get the kv cache to pass to the worker's model runner. Used by the
-        default `execute_model`. If the worker's model runner does not follow
-        the ModelRunnerBase interface, then inherit from WorkerBase instead.
+        Gets the list of kv caches to pass to the worker's model runner. Each
+        element in the list is a kv cache corresponding to a particular virtual
+        engine (PP stream). Used by the default `execute_model`. If the worker's
+        model runner does not follow the ModelRunnerBase interface, then inherit
+        from WorkerBase instead.
         """
         raise NotImplementedError
 
