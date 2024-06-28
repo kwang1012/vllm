@@ -195,7 +195,8 @@ class RayGPUExecutor(DistributedGPUExecutor):
         # rest of the workers.
         self.tp_driver_workers: List[RayWorkerWrapper] = []
         # This is the list of workers that are not drivers and not the first
-        # worker in a TP group. These are the workers that will be broadcasted to.
+        # worker in a TP group. These are the workers that will be
+        # broadcasted to.
         self.non_driver_workers: List[RayWorkerWrapper] = []
 
         for pp_rank in range(self.parallel_config.pipeline_parallel_size):
@@ -270,9 +271,9 @@ class RayGPUExecutor(DistributedGPUExecutor):
                 ray_workers = self.non_driver_workers
             ray_worker_outputs = [
                 worker.execute_method.remote(method, *worker_args,
-                                                **worker_kwargs)
+                                             **worker_kwargs)
                 for (worker, worker_args, worker_kwargs
-                        ) in zip(ray_workers, all_worker_args, all_worker_kwargs)
+                     ) in zip(ray_workers, all_worker_args, all_worker_kwargs)
             ]
 
         if async_run_tensor_parallel_workers_only:
