@@ -288,11 +288,11 @@ class LlamaModel(nn.Module):
         kv_caches: List[torch.Tensor],
         attn_metadata: AttentionMetadata,
         intermediate_tensors: Optional[IntermediateTensors],
-        input_embeds: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
     ) -> Union[torch.Tensor, IntermediateTensors]:
         if get_pp_group().is_first_rank:
-            if input_embeds is not None:
-                hidden_states = input_embeds
+            if inputs_embeds is not None:
+                hidden_states = inputs_embeds
             else:
                 hidden_states = self.get_input_embeddings(input_ids)
             residual = None

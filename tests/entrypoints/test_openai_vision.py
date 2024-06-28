@@ -33,7 +33,7 @@ def ray_ctx():
 
 
 @pytest.fixture(scope="module")
-def server():
+def server(ray_ctx):
     return RemoteOpenAIServer([
         "--model",
         MODEL_NAME,
