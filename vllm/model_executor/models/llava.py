@@ -312,6 +312,7 @@ class LlavaForConditionalGeneration(nn.Module, SupportsVision):
                                             positions,
                                             kv_caches,
                                             attn_metadata,
+                                            None,
                                             inputs_embeds=inputs_embeds)
 
         return hidden_states

@@ -75,7 +75,7 @@ class EmbeddingModelRunner(
         assert model_input.attn_metadata is not None
         prefill_meta = model_input.attn_metadata.prefill_metadata
         decode_meta = model_input.attn_metadata.decode_metadata
-        virtual_engine = model_input.attn_metadata.virtual_engine
+        virtual_engine = model_input.virtual_engine
         if prefill_meta is None and decode_meta.use_cuda_graph:
             assert model_input.input_tokens is not None
             graph_batch_size = model_input.input_tokens.shape[0]

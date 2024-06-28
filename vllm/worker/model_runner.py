@@ -1050,6 +1050,8 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
                     0, indices)
             elif decode_meta.use_cuda_graph:
                 hidden_states = hidden_or_intermediate_states[:len(indices)]
+            else:
+                hidden_states = hidden_or_intermediate_states
 
             output.hidden_states = hidden_states
 
