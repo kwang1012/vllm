@@ -211,6 +211,13 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         Process an execution request.
         """
         raise NotImplementedError
+    
+    @abstractmethod
+    def swap_out(self, execute_model_req: ExecuteModelRequest) -> None:
+        """
+        Process an execution request.
+        """
+        raise NotImplementedError
 
     def execute_model(
         self,
@@ -269,13 +276,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 get_pp_group().recv_tensor_dict())
 
         output = self.model_runner.execute_model(
-            model_input, self.kv_cache[worker_input.virtual_engine]
+            model_input, self.kv_cache
             if self.kv_cache is not None else None, intermediate_tensors,
             num_steps)
 
         if not get_pp_group().is_last_rank:
             get_pp_group().send_tensor_dict(output.tensors)
-            return [None]
+
+        self.swap_out(execute_model_req)
 
         # Worker only supports single-step execution. Wrap the output in a
         # list to conform to interface.

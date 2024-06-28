@@ -5,7 +5,7 @@ import math
 from abc import ABC, abstractmethod
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 
@@ -976,6 +976,8 @@ class ExecuteModelRequest:
     blocks_to_swap_out: List[Tuple[int, int]] = field(default_factory=list)
     # Blocks to copy. Source to dest block.
     blocks_to_copy: List[Tuple[int, int]] = field(default_factory=list)
+    # Blocks 
+    get_blocks_to_swap_out: Optional[Callable[[], List[Tuple[int, int]]]] = None
     # Virtual engine ID for pipeline parallel.
     virtual_engine: int = 0
     # The number of slots for lookahead decoding.

@@ -221,15 +221,19 @@ class Worker(LocalOrDistributedWorkerBase):
 
     def _init_cache_engine(self):
         assert self.cache_config.num_gpu_blocks is not None
-        self.cache_engine = [
-            CacheEngine(self.cache_config, self.model_config,
-                        self.parallel_config, self.device_config)
-            for _ in range(self.parallel_config.pipeline_parallel_size)
-        ]
-        self.gpu_cache = [
-            self.cache_engine[ve].gpu_cache
-            for ve in range(self.parallel_config.pipeline_parallel_size)
-        ]
+
+        gpu_cache = None
+        self.cache_engine = []
+        for _ in range(self.parallel_config.pipeline_parallel_size):
+            engine = CacheEngine(self.cache_config, self.model_config,
+                        self.parallel_config, self.device_config, gpu_cache)
+            gpu_cache = engine.gpu_cache
+            self.cache_engine.append(engine)
+        self.gpu_cache = gpu_cache
+        # self.gpu_cache = [
+        #     self.cache_engine[ve].gpu_cache
+        #     for ve in range(self.parallel_config.pipeline_parallel_size)
+        # ]
 
     def _warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
@@ -289,6 +293,16 @@ class Worker(LocalOrDistributedWorkerBase):
         if (worker_input.blocks_to_copy is not None
                 and worker_input.blocks_to_copy.numel() > 0):
             self.cache_engine[virtual_engine].copy(worker_input.blocks_to_copy)
+    
+    def swap_out(self, execute_model_req: ExecuteModelRequest) -> None:
+        blocks_to_swap_out_after = execute_model_req.get_blocks_to_swap_out()
+        virtual_engine = execute_model_req.virtual_engine
+        blocks_to_swap_out = torch.tensor(blocks_to_swap_out_after,
+                                          device="cpu",
+                                          dtype=torch.int64).view(-1, 2)
+        if (blocks_to_swap_out is not None
+                and blocks_to_swap_out.numel() > 0):
+            self.cache_engine[virtual_engine].swap_out(blocks_to_swap_out)
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
         return self.model_runner.add_lora(lora_request)

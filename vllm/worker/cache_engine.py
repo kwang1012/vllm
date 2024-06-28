@@ -26,6 +26,7 @@ class CacheEngine:
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         device_config: DeviceConfig,
+        gpu_cache: List[torch.Tensor] = None,
     ) -> None:
         self.cache_config = cache_config
         self.model_config = model_config
@@ -40,11 +41,11 @@ class CacheEngine:
 
         self.block_size = cache_config.block_size
         self.num_gpu_blocks = cache_config.num_gpu_blocks
-        if self.num_gpu_blocks:
-            self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
+        # if self.num_gpu_blocks:
+        #     self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
         self.num_cpu_blocks = cache_config.num_cpu_blocks
-        if self.num_cpu_blocks:
-            self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
+        # if self.num_cpu_blocks:
+        #     self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         if cache_config.cache_dtype == "auto":
             self.dtype = model_config.dtype
@@ -63,8 +64,11 @@ class CacheEngine:
         )
 
         # Initialize the cache.
-        self.gpu_cache = self._allocate_kv_cache(
-            self.num_gpu_blocks, self.device_config.device_type)
+        if gpu_cache is None:
+            self.gpu_cache = self._allocate_kv_cache(
+                self.num_gpu_blocks, self.device_config.device_type)
+        else:
+            self.gpu_cache = gpu_cache
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 
     def _allocate_kv_cache(

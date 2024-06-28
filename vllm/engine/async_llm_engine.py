@@ -131,8 +131,8 @@ class RequestTracker:
 
         self._request_streams[request_id].put(request_output)
         if request_output.finished:
-            if verbose:
-                logger.info("Finished request %s.", request_id)
+            # if verbose:
+            #     logger.info("Finished request %s.", request_id)
             self.abort_request(request_id)
 
     def process_exception(self,
@@ -235,6 +235,7 @@ class _AsyncLLMEngine(LLMEngine):
                 blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
                 blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
                 blocks_to_copy=scheduler_outputs.blocks_to_copy,
+                get_blocks_to_swap_out=scheduler_outputs.get_blocks_to_swap_out,
                 virtual_engine=virtual_engine,
                 num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
                 running_queue_size=scheduler_outputs.running_queue_size,
@@ -243,7 +244,7 @@ class _AsyncLLMEngine(LLMEngine):
                 execute_model_req)
         else:
             output = []
-
+        
         request_outputs = self._process_model_outputs(
             output, scheduler_outputs.scheduled_seq_groups,
             scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
@@ -659,11 +660,11 @@ class AsyncLLMEngine:
                 if shortened_token_ids is not None:
                     shortened_token_ids = shortened_token_ids[:max_log_len]
 
-            logger.info(
-                "Received request %s: prompt: %r, "
-                "params: %s, prompt_token_ids: %s, "
-                "lora_request: %s.", request_id, shortened_prompt, params,
-                shortened_token_ids, lora_request)
+            # logger.info(
+            #     "Received request %s: prompt: %r, "
+            #     "params: %s, prompt_token_ids: %s, "
+            #     "lora_request: %s.", request_id, shortened_prompt, params,
+            #     shortened_token_ids, lora_request)
 
         if not self.is_running:
             if self.start_engine_loop:

@@ -4,7 +4,7 @@ import random
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
+from typing import Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple, Union
 
 from vllm.config import CacheConfig, LoRAConfig, SchedulerConfig
 from vllm.core.interfaces import AllocStatus, BlockSpaceManager
@@ -124,6 +124,8 @@ class SchedulerOutputs:
     blocks_to_swap_out: List[Tuple[int, int]]
     # Blocks to copy. Source to dest block.
     blocks_to_copy: List[Tuple[int, int]]
+    # 
+    get_blocks_to_swap_out: Callable[[], List[Tuple[int, int]]]
     # Sequence groups that are going to be ignored.
     ignored_seq_groups: List[SequenceGroup]
     # The number of slots for lookahead decoding.
@@ -286,12 +288,12 @@ class Scheduler:
             version)
 
         num_gpu_blocks = cache_config.num_gpu_blocks
-        if num_gpu_blocks:
-            num_gpu_blocks //= pipeline_parallel_size
+        # if num_gpu_blocks:
+        #     num_gpu_blocks //= parallel_config.pipeline_parallel_size
 
         num_cpu_blocks = cache_config.num_cpu_blocks
-        if num_cpu_blocks:
-            num_cpu_blocks //= pipeline_parallel_size
+        # if num_cpu_blocks:
+        #     num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         # Create the block space manager.
         self.block_manager = BlockSpaceManagerImpl(
@@ -768,6 +770,9 @@ class Scheduler:
         decodes. If there's a pressure on GPU memory, decode requests can
         be swapped or preempted.
         """
+        # swap in the kv cache of this virtual engine
+        blocks_to_swap_in = self.block_manager.swap_in_all()
+
         # Include running requests to the budget.
         budget = SchedulingBudget(
             token_budget=self.scheduler_config.max_num_batched_tokens,
@@ -833,6 +838,9 @@ class Scheduler:
         preempted = (len(running_scheduled.preempted) +
                      len(running_scheduled.swapped_out))
 
+        # swap to cpu after execution of this virtual engine
+        # blocks_to_swap_out = self.block_manager.swap_out_all()
+        
         # There should be no prefill from running queue because this policy
         # doesn't allow chunked prefills.
         assert len(running_scheduled.prefill_seq_groups) == 0
@@ -843,10 +851,11 @@ class Scheduler:
                                   swapped_in.decode_seq_groups),
             num_prefill_groups=len(prefills.seq_groups),
             num_batched_tokens=budget.num_batched_tokens,
-            blocks_to_swap_in=swapped_in.blocks_to_swap_in,
+            blocks_to_swap_in=swapped_in.blocks_to_swap_in + blocks_to_swap_in,
             blocks_to_swap_out=running_scheduled.blocks_to_swap_out,
             blocks_to_copy=running_scheduled.blocks_to_copy +
             swapped_in.blocks_to_copy,
+            get_blocks_to_swap_out=self.block_manager.swap_out_all,
             ignored_seq_groups=prefills.ignored_seq_groups +
             swapped_in.infeasible_seq_groups,
             num_lookahead_slots=running_scheduled.num_lookahead_slots,
@@ -969,6 +978,9 @@ class Scheduler:
             seq_group=seq_group,
             num_lookahead_slots=self._get_num_lookahead_slots(is_prefill),
         )
+    
+    def after_execution(self):
+        return self.block_manager.swap_out_all()
 
     def schedule(self) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs]:
         # Schedule sequence groups.
