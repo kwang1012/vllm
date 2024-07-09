@@ -30,7 +30,7 @@ from vllm.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
 from vllm.distributed import get_pp_group
 from vllm.distributed.parallel_state import graph_capture
 from vllm.inputs import INPUT_REGISTRY
-from vllm.logger import init_logger
+from vllm.logger import BLOCK_SIZE_LIST, init_logger
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager
@@ -1206,6 +1206,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )
+
+        end_time = time.time()
+
+        # print(len(output.outputs), end_time-start_time)
 
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token

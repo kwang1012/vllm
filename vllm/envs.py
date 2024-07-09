@@ -47,6 +47,7 @@ if TYPE_CHECKING:
     VLLM_NO_DEPRECATION_WARNING: bool = False
     CMAKE_BUILD_TYPE: Optional[str] = None
     VERBOSE: bool = False
+    VLLM_LOGGING_FILENAME: str = "results.log"
 
 
 def get_default_cache_root():
@@ -307,6 +308,8 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # If set, vllm will skip the deprecation warnings.
     "VLLM_NO_DEPRECATION_WARNING":
     lambda: bool(int(os.getenv("VLLM_NO_DEPRECATION_WARNING", "0"))),
+    "VLLM_LOGGING_FILENAME":
+    lambda: os.getenv("VLLM_LOGGING_FILENAME", "results.log"),
 }
 
 # end-env-vars-definition

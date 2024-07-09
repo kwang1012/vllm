@@ -15,9 +15,12 @@ import vllm.envs as envs
 VLLM_CONFIGURE_LOGGING = envs.VLLM_CONFIGURE_LOGGING
 VLLM_LOGGING_CONFIG_PATH = envs.VLLM_LOGGING_CONFIG_PATH
 VLLM_LOGGING_LEVEL = envs.VLLM_LOGGING_LEVEL
+VLLM_LOGGING_FILENAME = envs.VLLM_LOGGING_FILENAME
 
 _FORMAT = "%(levelname)s %(asctime)s %(filename)s:%(lineno)d] %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
+
+BLOCK_SIZE_LIST = []
 
 DEFAULT_LOGGING_CONFIG = {
     "formatters": {
@@ -34,10 +37,17 @@ DEFAULT_LOGGING_CONFIG = {
             "level": VLLM_LOGGING_LEVEL,
             "stream": "ext://sys.stdout",
         },
+        "file_handler": {
+            "formatter": "vllm",
+            "level": VLLM_LOGGING_LEVEL,
+            "class": "logging.FileHandler",
+            "filename": VLLM_LOGGING_FILENAME,
+            "mode": "a",
+        },
     },
     "loggers": {
         "vllm": {
-            "handlers": ["vllm"],
+            "handlers": ["file_handler"],
             "level": "DEBUG",
             "propagate": False,
         },
@@ -94,7 +104,7 @@ logger = init_logger(__name__)
 
 
 def _trace_calls(log_path, root_dir, frame, event, arg=None):
-    if event in ['call', 'return']:
+    if event in ["call", "return"]:
         # Extract the filename, line number, function name, and the code object
         filename = frame.f_code.co_filename
         lineno = frame.f_lineno
@@ -114,8 +124,8 @@ def _trace_calls(log_path, root_dir, frame, event, arg=None):
                 last_filename = ""
                 last_lineno = 0
                 last_func_name = ""
-            with open(log_path, 'a') as f:
-                if event == 'call':
+            with open(log_path, "a") as f:
+                if event == "call":
                     f.write(f"{datetime.datetime.now()} Call to"
                             f" {func_name} in {filename}:{lineno}"
                             f" from {last_func_name} in {last_filename}:"
