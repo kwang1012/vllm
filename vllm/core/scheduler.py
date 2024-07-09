@@ -305,6 +305,7 @@ class Scheduler:
         output_proc_callback: Optional[Callable] = None,
     ) -> None:
         self.scheduler_config = scheduler_config
+        self.scheduler_config.max_num_seqs /= parallel_config.pipeline_parallel_size
         self.cache_config = cache_config
         # Note for LoRA scheduling: the current policy is extremely
         # simple and NOT fair. It can lead to starvation of some
@@ -345,6 +346,8 @@ class Scheduler:
         # Sequence groups in the SWAPPED state.
         # Contain decode requests that are swapped out.
         self.swapped: Deque[SequenceGroup] = deque()
+
+        self.has_scheduled: Set[SequenceGroup] = set()
         # Sequence groups finished requests ids since last step iteration.
         # It lets the model know that any state associated with these requests
         # can and must be released after the current step.
@@ -874,6 +877,8 @@ class Scheduler:
         waiting_queue = self.waiting
 
         leftover_waiting_sequences: Deque[SequenceGroup] = deque()
+        prefills = []
+        recomputes = []
         while self._passed_delay(time.time()) and waiting_queue:
             seq_group = waiting_queue[0]
 
@@ -948,11 +953,22 @@ class Scheduler:
             budget.add_num_batched_tokens(seq_group.request_id, num_new_tokens)
             budget.add_num_seqs(seq_group.request_id, num_new_seqs)
 
+            if seq_group not in self.has_scheduled:
+                prefills.append(seq_group)
+                self.has_scheduled.add(seq_group)
+            else:
+                recomputes.append(seq_group)
+
         # Queue requests that couldn't be scheduled.
         waiting_queue.extendleft(leftover_waiting_sequences)
         if len(seq_groups) > 0:
             self.prev_prompt = True
 
+        if len(prefills) > 0:
+            logger.info("schedule prefills: %d sequences", len(prefills))
+        if len(recomputes) > 0:
+            logger.info("schedule recomputes: %d sequences", len(recomputes))
+            
         return SchedulerPrefillOutputs(
             seq_groups=seq_groups,
             ignored_seq_groups=ignored_seq_groups,
@@ -1413,6 +1429,7 @@ class Scheduler:
         blocks_to_swap_out: List[Tuple[int, int]],
         preemption_mode: Optional[PreemptionMode] = None,
     ) -> PreemptionMode:
+        logger.info("preempt seq group %s", seq_group.request_id)
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
         # swapping. However, when the sequence group has multiple sequences

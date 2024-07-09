@@ -10,11 +10,11 @@ from vllm.utils import random_uuid
 async def main():
     # Sample prompts.
     prompts = [
-        "Say any 20 words " * 100,
-    ]
+        "Say any 20 words",
+    ] * 1000
 
     # Create an LLM.
-    engine = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(model="meta-llama/Llama-2-7b-chat-hf", max_num_seqs=64, tensor_parallel_size=1, pipeline_parallel_size=1))
+    engine = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(distributed_executor_backend="ray", model="meta-llama/Llama-2-7b-hf", max_num_seqs=64, tensor_parallel_size=1, pipeline_parallel_size=1))
 
     pbar = tqdm(
         total=len(prompts),

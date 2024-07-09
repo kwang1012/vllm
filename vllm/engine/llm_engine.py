@@ -1234,6 +1234,8 @@ class LLMEngine:
         assert seq_group_metadata_list is not None
         assert scheduler_outputs is not None
 
+        start_time = time.time()
+
         if not scheduler_outputs.is_empty():
             finished_requests_ids = self.scheduler[
                 virtual_engine].get_and_reset_finished_requests_ids()
