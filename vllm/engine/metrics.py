@@ -402,6 +402,7 @@ def build_1_2_3_5_8_buckets(max_value: int) -> List[int]:
 
 def local_interval_elapsed(now: float, last_log: float,
                            local_interval: float) -> bool:
+    return True
     elapsed_time = now - last_log
     return elapsed_time > local_interval
 

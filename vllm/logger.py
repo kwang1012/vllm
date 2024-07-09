@@ -17,10 +17,13 @@ VLLM_CONFIGURE_LOGGING = envs.VLLM_CONFIGURE_LOGGING
 VLLM_LOGGING_CONFIG_PATH = envs.VLLM_LOGGING_CONFIG_PATH
 VLLM_LOGGING_LEVEL = envs.VLLM_LOGGING_LEVEL
 VLLM_LOGGING_PREFIX = envs.VLLM_LOGGING_PREFIX
+VLLM_LOGGING_FILENAME = envs.VLLM_LOGGING_FILENAME
 
 _FORMAT = (f"{VLLM_LOGGING_PREFIX}%(levelname)s %(asctime)s "
            "%(filename)s:%(lineno)d] %(message)s")
 _DATE_FORMAT = "%m-%d %H:%M:%S"
+
+BLOCK_SIZE_LIST = []
 
 DEFAULT_LOGGING_CONFIG = {
     "formatters": {
@@ -37,10 +40,17 @@ DEFAULT_LOGGING_CONFIG = {
             "level": VLLM_LOGGING_LEVEL,
             "stream": "ext://sys.stdout",
         },
+        "file_handler": {
+            "formatter": "vllm",
+            "level": VLLM_LOGGING_LEVEL,
+            "class": "logging.FileHandler",
+            "filename": VLLM_LOGGING_FILENAME,
+            "mode": "a",
+        },
     },
     "loggers": {
         "vllm": {
-            "handlers": ["vllm"],
+            "handlers": ["file_handler"],
             "level": "DEBUG",
             "propagate": False,
         },
@@ -148,7 +158,7 @@ logger = init_logger(__name__)
 
 
 def _trace_calls(log_path, root_dir, frame, event, arg=None):
-    if event in ['call', 'return']:
+    if event in ["call", "return"]:
         # Extract the filename, line number, function name, and the code object
         filename = frame.f_code.co_filename
         lineno = frame.f_lineno

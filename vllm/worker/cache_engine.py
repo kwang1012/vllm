@@ -6,7 +6,7 @@ import torch
 from vllm.attention import get_attn_backend
 from vllm.config import CacheConfig, DeviceConfig, ModelConfig, ParallelConfig
 from vllm.logger import init_logger
-from vllm.utils import (STR_DTYPE_TO_TORCH_DTYPE, LayerBlockType,
+from vllm.utils import (STR_DTYPE_TO_TORCH_DTYPE, DeviceMemoryProfiler, LayerBlockType,
                         get_dtype_size, is_pin_memory_available)
 
 logger = init_logger(__name__)
@@ -59,8 +59,11 @@ class CacheEngine:
                                              model_config.is_attention_free)
 
         # Initialize the cache.
-        self.gpu_cache = self._allocate_kv_cache(
-            self.num_gpu_blocks, self.device_config.device_type)
+        with DeviceMemoryProfiler() as m:
+            self.gpu_cache = self._allocate_kv_cache(
+                self.num_gpu_blocks, self.device_config.device_type)
+        logger.info("Allocate KV cache took %.4f GB",
+                    m.consumed_memory / float(2**30))
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 
     def _allocate_kv_cache(
