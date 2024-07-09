@@ -177,8 +177,8 @@ class RequestTracker:
                           *,
                           verbose: bool = False) -> None:
         """Propagate an exception from the engine."""
-        if verbose:
-            logger.info("Finished request %s.", request_id)
+        # if verbose:
+        #     logger.info("Finished request %s.", request_id)
         self.abort_request(request_id, exception=exception)
 
     def add_request(self,
@@ -283,6 +283,7 @@ class _AsyncLLMEngine(LLMEngine):
         # Clear outputs for each new scheduler iteration
         ctx.request_outputs.clear()
 
+        start_time = time.time()
         # skip the scheduler if there are any remaining steps in the seq groups.
         # This ensures that the scheduler is only called again when the current
         # batch has completed.
