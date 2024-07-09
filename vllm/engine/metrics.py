@@ -236,6 +236,7 @@ class SupportsMetricsInfo(Protocol):
 
 def local_interval_elapsed(now: float, last_log: float,
                            local_interval: float) -> bool:
+    return True
     elapsed_time = now - last_log
     return elapsed_time > local_interval
 

@@ -7,7 +7,7 @@ import torch
 from vllm.attention import get_attn_backend
 from vllm.config import CacheConfig, DeviceConfig, ModelConfig, ParallelConfig
 from vllm.logger import init_logger
-from vllm.utils import (STR_DTYPE_TO_TORCH_DTYPE, get_dtype_size,
+from vllm.utils import (STR_DTYPE_TO_TORCH_DTYPE, CudaMemoryProfiler, get_dtype_size,
                         is_pin_memory_available)
 
 logger = init_logger(__name__)
@@ -66,8 +66,11 @@ class CacheEngine:
 
         # Initialize the cache.
         if gpu_cache is None or not self.cache_config.swapping:
-            self.gpu_cache = self._allocate_kv_cache(
-                self.num_gpu_blocks, self.device_config.device_type)
+            with CudaMemoryProfiler() as m:
+                self.gpu_cache = self._allocate_kv_cache(
+                    self.num_gpu_blocks, self.device_config.device_type)
+            logger.info("Allocate KV cache took %.4f GB",
+                        m.consumed_memory / float(2**30))
         else:
             self.gpu_cache = gpu_cache
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")

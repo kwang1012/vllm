@@ -29,7 +29,7 @@ from vllm.config import (CacheConfig, DeviceConfig, LoadConfig, LoRAConfig,
 from vllm.distributed import get_pp_group
 from vllm.distributed.parallel_state import graph_capture
 from vllm.inputs import INPUT_REGISTRY
-from vllm.logger import init_logger
+from vllm.logger import BLOCK_SIZE_LIST, init_logger
 from vllm.lora.layers import LoRAMapping
 from vllm.lora.request import LoRARequest
 from vllm.lora.worker_manager import LRUCacheWorkerLoRAManager
@@ -420,6 +420,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
 
         for seq_group_metadata in seq_group_metadata_list:
             seq_ids = list(seq_group_metadata.seq_data.keys())
+            # print(f"{seq_ids=}")
             is_prompt = seq_group_metadata.is_prompt
 
             for seq_id in seq_ids:
@@ -640,6 +641,8 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         max_prefill_seq_len = max(prefill_seq_lens, default=0)
         max_decode_seq_len = max(decode_seq_lens, default=0)
 
+        # print(f"{num_prefill_tokens=} {batch_size=}")
+
         # If cuda graph can be used, pad tensors accordingly.
         # See `capture_model` API for more details.
         # vLLM uses cuda graph only for decoding requests.
@@ -665,6 +668,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
             batch_size = graph_batch_size
             num_decode_tokens = batch_size
 
+        BLOCK_SIZE_LIST.append(batch_size)
         if use_captured_graph:
             # The shape of graph_block_tables is
             # [max batch size, max context len // block size].
@@ -1364,6 +1368,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             logits=logits,
             sampling_metadata=model_input.sampling_metadata,
         )
+
+        end_time = time.time()
+
+        # print(len(output.outputs), end_time-start_time)
 
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token

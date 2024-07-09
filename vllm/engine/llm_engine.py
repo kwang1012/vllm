@@ -872,6 +872,8 @@ class LLMEngine:
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
             0].schedule()
 
+        start_time = time.time()
+
         if not scheduler_outputs.is_empty():
             finished_requests_ids = self.scheduler[
                 0].get_and_reset_finished_requests_ids()
