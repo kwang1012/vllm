@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     VLLM_INSTALL_PUNICA_KERNELS: bool = False
     CMAKE_BUILD_TYPE: Optional[str] = None
     VERBOSE: bool = False
+    VLLM_LOGGING_FILENAME: str = "results.log"
 
 # The begin-* and end* here are used by the documentation generator
 # to extract the used env vars.
@@ -248,6 +249,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     # Only used for XLA devices such as TPUs.
     "VLLM_XLA_CACHE_PATH":
     lambda: os.getenv("VLLM_XLA_CACHE_PATH", "~/.vllm/xla_cache/"),
+    "VLLM_FUSED_MOE_CHUNK_SIZE":
+    lambda: int(os.getenv("VLLM_FUSED_MOE_CHUNK_SIZE", "65536")),
+
+    "VLLM_LOGGING_FILENAME":
+    lambda: os.getenv("VLLM_LOGGING_FILENAME", "results.log"),
 }
 
 # end-env-vars-definition

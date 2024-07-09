@@ -130,8 +130,8 @@ class RequestTracker:
 
         self._request_streams[request_id].put(request_output)
         if request_output.finished:
-            if verbose:
-                logger.info("Finished request %s.", request_id)
+            # if verbose:
+            #     logger.info("Finished request %s.", request_id)
             self.abort_request(request_id)
 
     def process_exception(self,
@@ -141,8 +141,8 @@ class RequestTracker:
                           verbose: bool = False) -> None:
         """Propagate an exception from the engine."""
         self._request_streams[request_id].put(exception)
-        if verbose:
-            logger.info("Finished request %s.", request_id)
+        # if verbose:
+        #     logger.info("Finished request %s.", request_id)
         self.abort_request(request_id)
 
     def add_request(self, request_id: str,
@@ -224,6 +224,11 @@ class _AsyncLLMEngine(LLMEngine):
         """
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
             virtual_engine].schedule()
+        
+        num_free_blocks = self.scheduler[virtual_engine].block_manager.gpu_allocator.get_num_free_blocks()
+        # print(f"{virtual_engine=} {num_free_blocks=}")
+
+        start_time = time.time()
 
         if not scheduler_outputs.is_empty():
             # Execute the model.
@@ -244,6 +249,11 @@ class _AsyncLLMEngine(LLMEngine):
         request_outputs = self._process_model_outputs(
             output, scheduler_outputs.scheduled_seq_groups,
             scheduler_outputs.ignored_seq_groups, seq_group_metadata_list)
+
+
+        end_time = time.time()
+
+        # print(len(output[0].outputs), end_time-start_time)
 
         # Log stats.
         self.do_log_stats(scheduler_outputs, output)
@@ -634,11 +644,11 @@ class AsyncLLMEngine:
                 if shortened_token_ids is not None:
                     shortened_token_ids = shortened_token_ids[:max_log_len]
 
-            logger.info(
-                "Received request %s: prompt: %r, "
-                "params: %s, prompt_token_ids: %s, "
-                "lora_request: %s.", request_id, shortened_prompt, params,
-                shortened_token_ids, lora_request)
+            # logger.info(
+            #     "Received request %s: prompt: %r, "
+            #     "params: %s, prompt_token_ids: %s, "
+            #     "lora_request: %s.", request_id, shortened_prompt, params,
+            #     shortened_token_ids, lora_request)
 
         if not self.is_running:
             if self.start_engine_loop:

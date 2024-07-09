@@ -829,6 +829,8 @@ class LLMEngine:
         seq_group_metadata_list, scheduler_outputs = self.scheduler[
             0].schedule()
 
+        start_time = time.time()
+
         if not scheduler_outputs.is_empty():
             execute_model_req = ExecuteModelRequest(
                 seq_group_metadata_list=seq_group_metadata_list,

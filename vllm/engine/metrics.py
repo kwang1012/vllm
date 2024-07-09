@@ -232,6 +232,7 @@ class StatLogger:
         return float(np.sum(tracked_stats) / (now - self.last_local_log))
 
     def _local_interval_elapsed(self, now: float) -> bool:
+        return True
         elapsed_time = now - self.last_local_log
         return elapsed_time > self.local_interval
 
@@ -343,7 +344,9 @@ class StatLogger:
                 "Avg generation throughput: %.1f tokens/s, "
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%.",
+                "CPU KV cache usage: %.1f%%, "
+                "Time to first token: %f, "
+                "Time per output tokens: %f.",
                 prompt_throughput,
                 generation_throughput,
                 stats.num_running_sys,
@@ -351,6 +354,8 @@ class StatLogger:
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
                 stats.cpu_cache_usage_sys * 100,
+                stats.time_to_first_tokens_iter[0] if len(stats.time_to_first_tokens_iter) > 0 else 0,
+                stats.time_per_output_tokens_iter[0] if len(stats.time_per_output_tokens_iter) > 0 else 0
             )
 
             # Reset tracked stats for next interval.
