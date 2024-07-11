@@ -202,3 +202,7 @@ benchmarks/*.json
 # Linting
 actionlint
 shellcheck*/
+*.json
+
+# Profiling data
+!results/profiling/*

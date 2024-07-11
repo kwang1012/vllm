@@ -328,9 +328,10 @@ class Scheduler:
         lora_config: Optional[LoRAConfig],
         pipeline_parallel_size: int = 1,
         output_proc_callback: Optional[Callable] = None,
+        virtual_engine: Optional[int] = 0
     ) -> None:
         self.scheduler_config = scheduler_config
-        self.scheduler_config.max_num_seqs /= parallel_config.pipeline_parallel_size
+        # self.scheduler_config.max_num_seqs /= parallel_config.pipeline_parallel_size
         self.cache_config = cache_config
         # Note for LoRA scheduling: the current policy is extremely
         # simple and NOT fair. It can lead to starvation of some
@@ -393,6 +394,7 @@ class Scheduler:
                                        if self.enable_artificial_preemption
                                        else 0)
         self.num_cumulative_preemption: int = 0
+        self.virtual_engine = virtual_engine
 
         # Used to cache python objects
         self._seq_group_metadata_cache: List[PyObjectCache] = []
@@ -1052,9 +1054,9 @@ class Scheduler:
             self.prev_prompt = True
 
         if len(prefills) > 0:
-            logger.info("schedule prefills: %d sequences", len(prefills))
+            logger.info("Virtual engine: %d, schedule prefills: %d sequences", self.virtual_engine, len(prefills))
         if len(recomputes) > 0:
-            logger.info("schedule recomputes: %d sequences", len(recomputes))
+            logger.info("Virtual engine: %d, schedule recomputes: %d sequences", self.virtual_engine, len(recomputes))
             
         return SchedulerPrefillOutputs(
             seq_groups=seq_groups,
@@ -1548,7 +1550,7 @@ class Scheduler:
 
     def _preempt(self, seq_group: SequenceGroup,
                  blocks_to_swap_out: List[Tuple[int, int]]) -> PreemptionMode:
-        logger.info("preempt seq group %s", seq_group.request_id)
+        logger.info("Virtual engine: %d, preempt seq group %s", self.virtual_engine, seq_group.request_id)
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
         # swapping. However, when the sequence group has multiple sequences
