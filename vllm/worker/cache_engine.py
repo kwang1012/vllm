@@ -64,7 +64,7 @@ class CacheEngine:
         with CudaMemoryProfiler() as m:
             self.gpu_cache = self._allocate_kv_cache(
                 self.num_gpu_blocks, self.device_config.device_type)
-        logger.info("Allocate KV cache took %.4f GB",
+        logger.info("Allocating KV cache took %.4f GB",
                     m.consumed_memory / float(2**30))
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 

@@ -1,0 +1,48 @@
+INFO 07-11 11:57:53.791 llm_engine.py:164] Initializing an LLM engine (v0.5.0.post1) with config: model='meta-llama/Llama-2-7b-hf', speculative_config=None, tokenizer='meta-llama/Llama-2-7b-hf', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, rope_scaling=None, rope_theta=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=4096, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=2, pipeline_parallel_size=1, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, quantization_param_path=None, device_config=cuda, decoding_config=DecodingConfig(guided_decoding_backend='outlines'), observability_config=ObservabilityConfig(otlp_traces_endpoint=None), seed=0, served_model_name=meta-llama/Llama-2-7b-hf)
+INFO 07-11 11:57:57.909 utils.py:719] Found nccl from library libnccl.so.2
+INFO 07-11 11:57:57.910 pynccl.py:63] vLLM is using nccl==2.20.5
+INFO 07-11 11:57:57.909 utils.py:719] Found nccl from library libnccl.so.2
+INFO 07-11 11:57:57.910 pynccl.py:63] vLLM is using nccl==2.20.5
+INFO 07-11 11:57:58.088 custom_all_reduce_utils.py:232] reading GPU P2P access cache from /home/kw37/.config/vllm/gpu_p2p_access_cache_for_0,1.json
+INFO 07-11 11:57:58.088 custom_all_reduce_utils.py:232] reading GPU P2P access cache from /home/kw37/.config/vllm/gpu_p2p_access_cache_for_0,1.json
+ERROR 07-11 11:57:58.415 worker_base.py:347] Error executing method load_model. This might cause deadlock in distributed execution.
+ERROR 07-11 11:57:58.415 worker_base.py:347] Traceback (most recent call last):
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/utils/_errors.py", line 304, in hf_raise_for_status
+ERROR 07-11 11:57:58.415 worker_base.py:347]     response.raise_for_status()
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/requests/models.py", line 1024, in raise_for_status
+ERROR 07-11 11:57:58.415 worker_base.py:347]     raise HTTPError(http_error_msg, response=self)
+ERROR 07-11 11:57:58.415 worker_base.py:347] requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: https://huggingface.co/api/models/meta-llama/Llama-2-7b-hf/tree/main?recursive=False&expand=False
+ERROR 07-11 11:57:58.415 worker_base.py:347] 
+ERROR 07-11 11:57:58.415 worker_base.py:347] The above exception was the direct cause of the following exception:
+ERROR 07-11 11:57:58.415 worker_base.py:347] 
+ERROR 07-11 11:57:58.415 worker_base.py:347] Traceback (most recent call last):
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/worker/worker_base.py", line 339, in execute_method
+ERROR 07-11 11:57:58.415 worker_base.py:347]     return executor(*args, **kwargs)
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/worker/worker.py", line 134, in load_model
+ERROR 07-11 11:57:58.415 worker_base.py:347]     self.model_runner.load_model()
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/worker/model_runner.py", line 217, in load_model
+ERROR 07-11 11:57:58.415 worker_base.py:347]     self.model = get_model(
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/model_executor/model_loader/__init__.py", line 21, in get_model
+ERROR 07-11 11:57:58.415 worker_base.py:347]     return loader.load_model(model_config=model_config,
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 271, in load_model
+ERROR 07-11 11:57:58.415 worker_base.py:347]     self._get_weights_iterator(model_config.model,
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 232, in _get_weights_iterator
+ERROR 07-11 11:57:58.415 worker_base.py:347]     hf_folder, hf_weights_files, use_safetensors = self._prepare_weights(
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 191, in _prepare_weights
+ERROR 07-11 11:57:58.415 worker_base.py:347]     hf_folder = download_weights_from_hf(model_name_or_path,
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/vllm/vllm/model_executor/model_loader/weight_utils.py", line 209, in download_weights_from_hf
+ERROR 07-11 11:57:58.415 worker_base.py:347]     file_list = fs.ls(model_name_or_path, detail=False, revision=revision)
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 288, in ls
+ERROR 07-11 11:57:58.415 worker_base.py:347]     out = self._ls_tree(path, refresh=refresh, revision=revision, **kwargs)
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/hf_file_system.py", line 379, in _ls_tree
+ERROR 07-11 11:57:58.415 worker_base.py:347]     for path_info in tree:
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/hf_api.py", line 2814, in list_repo_tree
+ERROR 07-11 11:57:58.415 worker_base.py:347]     for path_info in paginate(path=tree_url, headers=headers, params={"recursive": recursive, "expand": expand}):
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/utils/_pagination.py", line 37, in paginate
+ERROR 07-11 11:57:58.415 worker_base.py:347]     hf_raise_for_status(r)
+ERROR 07-11 11:57:58.415 worker_base.py:347]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/huggingface_hub/utils/_errors.py", line 371, in hf_raise_for_status
+ERROR 07-11 11:57:58.415 worker_base.py:347]     raise HfHubHTTPError(str(e), response=response) from e
+ERROR 07-11 11:57:58.415 worker_base.py:347] huggingface_hub.utils._errors.HfHubHTTPError: 500 Server Error: Internal Server Error for url: https://huggingface.co/api/models/meta-llama/Llama-2-7b-hf/tree/main?recursive=False&expand=False (Request ID: Root=1-66900f16-6f179a4200f9588c57cc1d03;ae98eb4b-5ab5-4124-905e-618a75e1f5ab)
+ERROR 07-11 11:57:58.415 worker_base.py:347] 
+ERROR 07-11 11:57:58.415 worker_base.py:347] Internal Error - We're working hard to fix this as soon as possible!
+INFO 07-11 11:57:58.434 weight_utils.py:218] Using model weights format ['*.safetensors']

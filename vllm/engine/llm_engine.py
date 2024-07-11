@@ -292,8 +292,8 @@ class LLMEngine:
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
             Scheduler(scheduler_config, cache_config, parallel_config,
-                      lora_config)
-            for _ in range(parallel_config.pipeline_parallel_size)
+                      lora_config, i)
+            for i in range(parallel_config.pipeline_parallel_size)
         ]
 
         # Metric Logging.
@@ -868,11 +868,12 @@ class LLMEngine:
     def do_log_stats(
             self,
             scheduler_outputs: Optional[SchedulerOutputs] = None,
-            model_output: Optional[List[SamplerOutput]] = None) -> None:
+            model_output: Optional[List[SamplerOutput]] = None,
+            virtual_engine: Optional[int] = 0) -> None:
         """Forced log when no requests active."""
         if self.log_stats:
             self.stat_logger.log(
-                self._get_stats(scheduler_outputs, model_output))
+                self._get_stats(scheduler_outputs, model_output), virtual_engine)
 
     def _get_stats(
             self,
