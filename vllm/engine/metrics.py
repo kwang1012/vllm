@@ -4,6 +4,7 @@ from typing import Dict, List, Optional, Union
 
 import numpy as np
 import prometheus_client
+import torch
 
 from vllm.engine.metrics_types import (StatLoggerBase, Stats,
                                        SupportsMetricsInfo)
@@ -324,7 +325,7 @@ def get_throughput(tracked_stats: List[int], now: float,
 class LoggingStatLogger(StatLoggerBase):
     """LoggingStatLogger is used in LLMEngine to log to Stdout."""
 
-    def log(self, stats: Stats) -> None:
+    def log(self, stats: Stats, virtual_engine: Optional[int] = 0) -> None:
         """Called by LLMEngine.
            Logs to Stdout every self.local_interval seconds."""
 
@@ -350,13 +351,16 @@ class LoggingStatLogger(StatLoggerBase):
 
             # Log to stdout.
             logger.info(
+                "Virtual engine: %d, "
                 "Avg prompt throughput: %.1f tokens/s, "
                 "Avg generation throughput: %.1f tokens/s, "
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%."
+                "CPU KV cache usage: %.1f%%, "
                 "Time to first token: %f, "
-                "Time per output tokens: %f, ",
+                "Time per output tokens: %f, "
+                "GPU utilization: %d.",
+                virtual_engine,
                 prompt_throughput,
                 generation_throughput,
                 stats.num_running_sys,
@@ -366,6 +370,7 @@ class LoggingStatLogger(StatLoggerBase):
                 stats.cpu_cache_usage_sys * 100,
                 stats.time_to_first_tokens_iter[0] if len(stats.time_to_first_tokens_iter) > 0 else 0,
                 stats.time_per_output_tokens_iter[0] if len(stats.time_per_output_tokens_iter) > 0 else 0,
+                torch.cuda.utilization()
             )
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):
@@ -495,7 +500,7 @@ class PrometheusStatLogger(StatLoggerBase):
         self.metrics.gauge_avg_generation_throughput.labels(
             **self.labels).set(generation_throughput)
 
-    def log(self, stats: Stats):
+    def log(self, stats: Stats, virtual_engine: Optional[int] = 0):
         """Logs to prometheus and tracked stats every iteration."""
         # Log to prometheus.
         self._log_prometheus(stats)
