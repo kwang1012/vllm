@@ -260,7 +260,7 @@ class _AsyncLLMEngine(LLMEngine):
         # print(len(output[0].outputs), end_time-start_time)
 
         # Log stats.
-        self.do_log_stats(scheduler_outputs, output)
+        self.do_log_stats(scheduler_outputs, output, virtual_engine)
 
         # Tracing
         self.do_tracing(scheduler_outputs)
