@@ -3,9 +3,9 @@ backend=ray
 batchSizes=(16 32 64 128 256)
 maxTokens=(100 200 300 400 500 1000)
 
-for i in $(seq 1 2); 
+for i in $(seq 2 2); 
 do
-    for j in $(seq 2 4);
+    for j in $(seq 3 4);
     do
         if [ $i -eq 1 ]
         then
@@ -23,7 +23,6 @@ do
         do
             for maxToken in "${maxTokens[@]}"
             do
-                # echo $tp $pp $batchSize $maxToken
                 rm result-$tp-$pp-$batchSize-$maxToken.log
                 echo Running experiment, model: $model_name, batch: $batchSize, tp: $tp, pp: $pp, maxTokens: $maxToken
                 HF_TOKEN=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 VLLM_LOGGING_FILENAME=results/profiling/result-$tp-$pp-$batchSize-$maxToken.log python experiment.py \

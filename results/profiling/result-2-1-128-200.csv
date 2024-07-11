@@ -1,1 +1,1 @@
-ts,kv,compute,throughput,latency,is_prefill,num_seqs,seq_id
+ts,kv,compute,throughput,ttft,tpot,is_prefill,num_seqs,seq_id
