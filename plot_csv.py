@@ -12,7 +12,7 @@ def plot_event(ax, df):
     ax.bar(df.ts, evictions, width=4, label="Evictions")
     ax.set_ylim(0, 30)
 
-    ax.legend()
+    ax.legend(loc="upper left")
 
 def plot_result(ax, df):
 
@@ -21,25 +21,34 @@ def plot_result(ax, df):
     ln1 = ax_r.plot(df.ts, df.kv.ffill(), label="KV Cache", color="black")
     ln2 = ax_r.plot(df.ts, df.compute.ffill(), label="GPU utilization", color="red")
     ln3 = ax.plot(df.ts, df.throughput.ffill(), marker='o', markersize=1, linestyle="None", label="Throughput")
-    ln4 = ax.plot(df.ts, df.latency.ffill(), label="Latency")
 
-    lns = ln1 + ln2 + ln3 + ln4
+    lns = ln1 + ln2 + ln3
     labels = [ln.get_label() for ln in lns]
-    ax.legend(lns, labels)
+    ax.legend(lns, labels, loc="upper left")
+
+def plot_latency(ax, df):
+
+    ax_r = ax.twinx()
+
+    ln1 = ax.plot(df.ts, df.ttft.ffill(), marker='o', markersize=1, linestyle="None", label="TTFT")
+    ln2 = ax_r.plot(df.ts, df.tpot.ffill(), marker='o', markersize=1, linestyle="None", label="TPOT", color="orange")
+
+    lns = ln1 + ln2
+    labels = [ln.get_label() for ln in lns]
+    ax.legend(lns, labels, loc="upper left")
 
 def main(filename):
-    fig, axs = plt.subplots(2, figsize=(8, 8))
-    plt.tick_params(
-        axis='x',          # changes apply to the x-axis
-        which='both',      # both major and minor ticks are affected
-        bottom=False,      # ticks along the bottom edge are off
-        top=False,         # ticks along the top edge are off
-        labelbottom=False) # labels along the bottom edge are off
+    fig, axs = plt.subplots(3, figsize=(8, 12))
     
-    fields = ["ts", "kv", "compute", "throughput", "latency", "is_prefill", "num_seqs", "seq_id"]
+    fields = ["ts", "kv", "compute", "throughput", "ttft", "tpot", "is_prefill", "num_seqs", "seq_id"]
     df = pd.read_csv(f"{filename}.csv", usecols=fields)
     plot_result(axs[0], df)
-    plot_event(axs[1], df)
+    plot_latency(axs[1], df)
+    plot_event(axs[2], df)
+
+    for ax in axs:
+        ax.set_xticks([])
+
     fig.savefig(f"{filename}.png", bbox_inches="tight")
 
 if __name__ == "__main__":
