@@ -1,0 +1,39 @@
+#!/bin/bash
+
+batchSizes=(64 128 256)
+maxTokens=(100 200 300 400 500 500 1000)
+
+for i in $(seq 1 1);
+do
+    for j in $(seq 2 2);
+    do
+        if [ $i -eq 1 ]
+        then
+            tp=$j
+            pp=1
+        else
+            tp=1
+            pp=$j
+        fi
+        if [ $tp -eq 3 ]
+        then
+            continue
+        fi
+        for batchSize in "${batchSizes[@]}"
+        do
+            for maxToken in "${maxTokens[@]}"
+            do
+                echo Parsing experiment log, batch: $batchSize, tp: $tp, pp: $pp, maxTokens: $maxToken
+                python log2csv.py result-$tp-$pp-$batchSize-$maxToken
+            done
+        done
+        for batchSize in "${batchSizes[@]}"
+        do
+            for maxToken in "${maxTokens[@]}"
+            do
+                echo Plotting experiment figure, batch: $batchSize, tp: $tp, pp: $pp, maxTokens: $maxToken
+                python plot_csv.py result-$tp-$pp-$batchSize-$maxToken &
+            done
+        done
+    done
+done
