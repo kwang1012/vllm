@@ -11,7 +11,7 @@ from vllm.utils import FlexibleArgumentParser, random_uuid
 async def main(args):
     # Sample prompts.
     prompts = [
-        "Say any 20 words",
+        "How is the weather in Champaign?",
     ] * 1000
 
     # Create an LLM.
@@ -41,8 +41,15 @@ async def main(args):
         return await asyncio.gather(
             *[run(prompt) for prompt in prompts]
         )
-    await generate()
+    outputs = await generate()
     pbar.close()
+
+    avg_generated_text_len = []
+    for output in outputs:
+        generated_text = output.outputs[0].text
+        avg_generated_text_len.append(len(generated_text))
+
+    print("Average generated text length:", sum(avg_generated_text_len) / len(avg_generated_text_len))
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser()
