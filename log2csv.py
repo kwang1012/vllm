@@ -41,7 +41,8 @@ def main(filename):
             result["throughput"] = generation_throughput if prompt_throughput == 0 else prompt_throughput
             result["kv"] = kv_cache
             result["compute"] = gpu_utilization
-            result["latency"] = tpot if ttft == 0 else ttft
+            result["ttft"] = ttft
+            result["tpot"] = tpot
             result_dict.append(result)
             if generation_throughput != 0:
                 throughputs.append(generation_throughput)
@@ -79,7 +80,7 @@ def main(filename):
             e2e_latency = datetime.strptime(time_str, "%H:%M:%S.%f") - e2e_latency
 
 
-    fields = ["ts", "kv", "compute", "throughput", "latency", "is_prefill", "num_seqs", "seq_id"]
+    fields = ["ts", "kv", "compute", "throughput", "ttft", "tpot", "is_prefill", "num_seqs", "seq_id"]
 
     with open(f"{filename}.csv", 'w') as csvfile:
         # creating a csv dict writer object
