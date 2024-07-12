@@ -14,6 +14,8 @@ def main(filename):
     throughputs = []
     latencies = []
     e2e_latency = None
+    tokens = []
+    num_eviction = 0
 
     for line in lines:
         line = line.strip()
@@ -46,6 +48,7 @@ def main(filename):
             result_dict.append(result)
             if generation_throughput != 0:
                 throughputs.append(generation_throughput)
+                tokens.append(generation_throughput * tpot)
             if tpot != 0:
                 latencies.append(tpot)
         elif "schedule prefills" in line or "schedule recomputes" in line:
@@ -75,6 +78,7 @@ def main(filename):
             seq_id = info[1].split(" ")[-1]
             result["seq_id"] = seq_id
             result_dict.append(result)
+            num_eviction += 1
         elif "Engine is gracefully shutting down" in line:
             time_str = line.split(" ")[2]
             e2e_latency = datetime.strptime(time_str, "%H:%M:%S.%f") - e2e_latency
@@ -92,8 +96,12 @@ def main(filename):
         # writing data rows
         writer.writerows(result_dict)
     
-    print("Average throughput:", sum(throughputs) / len(throughputs))
-    print("Average latency:", sum(latencies) / len(latencies))
+    # avg_throughput = sum(throughputs) / len(throughputs)
+    avg_latency = sum(latencies) / len(latencies)
+    overall_throughput = sum(tokens) / e2e_latency.total_seconds()
+    print("Overall throughput:", overall_throughput)
+    print("Average TPOT:", avg_latency)
+    print("Total evictions:", num_eviction)
     print("E2E latency:", e2e_latency)
 
 if __name__ == "__main__":
