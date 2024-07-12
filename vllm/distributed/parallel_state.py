@@ -589,7 +589,6 @@ class GroupCoordinator:
         # all happening on CPU. Therefore, we can use the CPU group.
         self.send_object(metadata_list, dst=dst)
         for tensor in tensor_list:
-            # print(f"{tensor.size()=}")
             if tensor.numel() == 0:
                 # Skip sending empty tensors.
                 continue
@@ -627,7 +626,6 @@ class GroupCoordinator:
         tensor_dict: Dict[str, Any] = {}
         for key, value in recv_metadata_list:
             if isinstance(value, TensorMetadata):
-                # print(f"{value.size=}")
                 tensor = torch.empty(value.size,
                                      dtype=value.dtype,
                                      device=value.device)

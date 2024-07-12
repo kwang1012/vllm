@@ -1,5 +1,6 @@
 """CacheEngine class for managing the KV cache."""
-from typing import List
+import time
+from typing import List, Optional
 
 import torch
 
@@ -26,7 +27,7 @@ class CacheEngine:
         model_config: ModelConfig,
         parallel_config: ParallelConfig,
         device_config: DeviceConfig,
-        gpu_cache: List[torch.Tensor] = None,
+        gpu_cache: Optional[List[torch.Tensor]] = None,
     ) -> None:
         self.cache_config = cache_config
         self.model_config = model_config
@@ -41,11 +42,7 @@ class CacheEngine:
 
         self.block_size = cache_config.block_size
         self.num_gpu_blocks = cache_config.num_gpu_blocks
-        # if self.num_gpu_blocks:
-        #     self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
         self.num_cpu_blocks = cache_config.num_cpu_blocks
-        # if self.num_cpu_blocks:
-        #     self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         if cache_config.cache_dtype == "auto":
             self.dtype = model_config.dtype
@@ -93,14 +90,20 @@ class CacheEngine:
         return kv_cache
 
     def swap_in(self, src_to_dst: torch.Tensor) -> None:
+        start = time.time()
         for i in range(self.num_attention_layers):
             self.attn_backend.swap_blocks(self.cpu_cache[i], self.gpu_cache[i],
                                           src_to_dst)
+        end = time.time()
+        logger.info(f"Shape {src_to_dst.shape}, # layers: {self.num_attention_layers}, Swap in latency: {end - start}")
 
     def swap_out(self, src_to_dst: torch.Tensor) -> None:
+        start = time.time()
         for i in range(self.num_attention_layers):
             self.attn_backend.swap_blocks(self.gpu_cache[i], self.cpu_cache[i],
                                           src_to_dst)
+        end = time.time()
+        logger.info(f"Shape {src_to_dst.shape}, # layers: {self.num_attention_layers}, Swap out latency: {end - start}")
 
     def copy(self, src_to_dsts: torch.Tensor) -> None:
         self.attn_backend.copy_blocks(self.gpu_cache, src_to_dsts)

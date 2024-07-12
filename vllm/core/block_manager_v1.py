@@ -244,7 +244,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         self.watermark_blocks = int(watermark * num_gpu_blocks)
 
         if self.enable_caching:
-            # logger.info("Automatic prefix caching is enabled.")
+            logger.info("Automatic prefix caching is enabled.")
             self.gpu_allocator: BlockAllocatorBase = CachedBlockAllocator(
                 Device.GPU, block_size, num_gpu_blocks)
             self.cpu_allocator: BlockAllocatorBase = CachedBlockAllocator(
@@ -260,8 +260,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
         # Note that each SequenceGroup has a unique
         # request ID
         self.cross_block_tables: Dict[str, BlockTable] = {}
-
-        self.mapping = {}
 
     def _get_seq_num_required_blocks(self, seq: Sequence) -> int:
         return 0 if seq is None else seq.n_blocks
@@ -528,8 +526,7 @@ class BlockSpaceManagerV1(BlockSpaceManager):
             self, block_table: BlockTable, src_allocator: BlockAllocatorBase,
             dest_allocator: BlockAllocatorBase,
             mapping: Dict[PhysicalTokenBlock,
-                          PhysicalTokenBlock],
-            cached: bool = False) -> BlockTable:
+                          PhysicalTokenBlock]) -> BlockTable:
         new_block_table = []
 
         for from_block in block_table:
@@ -540,8 +537,6 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 to_block = dest_allocator.allocate(
                     from_block.block_hash, from_block.num_hashed_tokens)
 
-                # self.mapping[from_block] = to_block
-                # self.mapping[to_block] = from_block
                 mapping[from_block] = to_block
             new_block_table.append(to_block)
             # Free the source block swapped in to destination.
@@ -557,14 +552,14 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 self._swap_block_table(self.block_tables[seq_id],
                                        self.cpu_allocator,
                                        self.gpu_allocator,
-                                       mapping, True)
+                                       mapping)
 
         for request_id in self.cross_block_tables:
             self.cross_block_tables[request_id] = \
                 self._swap_block_table(self.cross_block_tables[request_id],
                                        self.cpu_allocator,
                                        self.gpu_allocator,
-                                       mapping, True)
+                                       mapping)
 
         return [(cpu_block.block_number, gpu_block.block_number)
                 for cpu_block, gpu_block in mapping.items()]
@@ -577,14 +572,14 @@ class BlockSpaceManagerV1(BlockSpaceManager):
                 self._swap_block_table(self.block_tables[seq_id],
                                        self.gpu_allocator,
                                        self.cpu_allocator,
-                                       mapping, True)
+                                       mapping)
 
         for request_id in self.cross_block_tables:
             self.cross_block_tables[request_id] = \
                 self._swap_block_table(self.cross_block_tables[request_id],
                                        self.gpu_allocator,
                                        self.cpu_allocator,
-                                       mapping, True)
+                                       mapping)
 
         return [(gpu_block.block_number, cpu_block.block_number)
                 for gpu_block, cpu_block in mapping.items()]

@@ -288,12 +288,7 @@ class Scheduler:
             version)
 
         num_gpu_blocks = cache_config.num_gpu_blocks
-        # if num_gpu_blocks:
-        #     num_gpu_blocks //= parallel_config.pipeline_parallel_size
-
         num_cpu_blocks = cache_config.num_cpu_blocks
-        # if num_cpu_blocks:
-        #     num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         # Create the block space manager.
         self.block_manager = BlockSpaceManagerImpl(
@@ -838,9 +833,6 @@ class Scheduler:
         preempted = (len(running_scheduled.preempted) +
                      len(running_scheduled.swapped_out))
 
-        # swap to cpu after execution of this virtual engine
-        # blocks_to_swap_out = self.block_manager.swap_out_all()
-        
         # There should be no prefill from running queue because this policy
         # doesn't allow chunked prefills.
         assert len(running_scheduled.prefill_seq_groups) == 0
@@ -978,9 +970,6 @@ class Scheduler:
             seq_group=seq_group,
             num_lookahead_slots=self._get_num_lookahead_slots(is_prefill),
         )
-    
-    def after_execution(self):
-        return self.block_manager.swap_out_all()
 
     def schedule(self) -> Tuple[List[SequenceGroupMetadata], SchedulerOutputs]:
         # Schedule sequence groups.

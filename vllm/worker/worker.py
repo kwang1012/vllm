@@ -221,7 +221,6 @@ class Worker(LocalOrDistributedWorkerBase):
 
     def _init_cache_engine(self):
         assert self.cache_config.num_gpu_blocks is not None
-
         gpu_cache = None
         self.cache_engine = []
         for _ in range(self.parallel_config.pipeline_parallel_size):
@@ -230,10 +229,6 @@ class Worker(LocalOrDistributedWorkerBase):
             gpu_cache = engine.gpu_cache
             self.cache_engine.append(engine)
         self.gpu_cache = gpu_cache
-        # self.gpu_cache = [
-        #     self.cache_engine[ve].gpu_cache
-        #     for ve in range(self.parallel_config.pipeline_parallel_size)
-        # ]
 
     def _warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
@@ -247,7 +242,7 @@ class Worker(LocalOrDistributedWorkerBase):
         return self.parallel_config.tensor_parallel_size > 1
 
     @property
-    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
+    def kv_cache(self) -> Optional[List[torch.Tensor]]:
         return self.gpu_cache
 
     @torch.inference_mode()
