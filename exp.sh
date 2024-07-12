@@ -3,9 +3,9 @@ backend=ray
 batchSizes=(16 32 64 128 256)
 maxTokens=(100 200 300 400 500 1000)
 
-for i in $(seq 2 2); 
+for i in $(seq 1 2); 
 do
-    for j in $(seq 3 4);
+    for j in $(seq $i 4);
     do
         if [ $i -eq 1 ]
         then
@@ -15,7 +15,7 @@ do
             tp=1
             pp=$j
         fi
-        if [ $tp -eq 3 ]
+        if [ $tp -eq 3 ] || [ $pp -eq 3 ] # not divisible by 3
         then
             continue
         fi
