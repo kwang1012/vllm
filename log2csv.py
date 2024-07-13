@@ -10,6 +10,7 @@ def main(filename):
     print_model_weights = False
 
     result_dict = []
+    swap_dict = []
 
     throughputs = []
     latencies = []
@@ -82,19 +83,30 @@ def main(filename):
         elif "Engine is gracefully shutting down" in line:
             time_str = line.split(" ")[2]
             e2e_latency = datetime.strptime(time_str, "%H:%M:%S.%f") - e2e_latency
+        elif "# layers" in line:
+            result = {}
+            time_str = line.split(" ")[2]
+            result["ts"] = time_str
+            info = line[line.find("] ") + 2:]
+            info = info.split(",")
+            latency = float(info[3].split(":")[1].strip())
+            result["is_in"] = "Swap in latency" in line
+            result["latency"] = latency
+            swap_dict.append(result)
 
 
     fields = ["ts", "kv", "compute", "throughput", "ttft", "tpot", "is_prefill", "num_seqs", "seq_id"]
 
     with open(f"{filename}.csv", 'w') as csvfile:
-        # creating a csv dict writer object
         writer = csv.DictWriter(csvfile, fieldnames=fields)
-
-        # writing headers (field names)
         writer.writeheader()
-
-        # writing data rows
         writer.writerows(result_dict)
+
+    fields = ["ts", "is_in", "latency"]
+    with open(f"{filename}-swap.csv", 'w') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fields)
+        writer.writeheader()
+        writer.writerows(swap_dict)
     
     # avg_throughput = sum(throughputs) / len(throughputs)
     avg_latency = sum(latencies) / len(latencies)

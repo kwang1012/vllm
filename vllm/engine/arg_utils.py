@@ -608,6 +608,11 @@ class EngineArgs:
             default=None,
             help='Target URL to which OpenTelemetry traces will be sent.')
 
+        parser.add_argument(
+            '--swapping',
+            action="store_true",
+            help='Enable swapping')
+
         return parser
 
     @classmethod
