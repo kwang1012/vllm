@@ -228,7 +228,10 @@ class Worker(LocalOrDistributedWorkerBase):
                         self.parallel_config, self.device_config, gpu_cache)
             gpu_cache = engine.gpu_cache
             self.cache_engine.append(engine)
-        self.gpu_cache = gpu_cache
+        self.gpu_cache = [
+            self.cache_engine[ve].gpu_cache
+            for ve in range(self.parallel_config.pipeline_parallel_size)
+        ]
 
     def _warm_up_model(self) -> None:
         if not self.model_config.enforce_eager:
@@ -242,7 +245,7 @@ class Worker(LocalOrDistributedWorkerBase):
         return self.parallel_config.tensor_parallel_size > 1
 
     @property
-    def kv_cache(self) -> Optional[List[torch.Tensor]]:
+    def kv_cache(self) -> Optional[List[List[torch.Tensor]]]:
         return self.gpu_cache
 
     @torch.inference_mode()
@@ -290,6 +293,8 @@ class Worker(LocalOrDistributedWorkerBase):
             self.cache_engine[virtual_engine].copy(worker_input.blocks_to_copy)
     
     def swap_out(self, execute_model_req: ExecuteModelRequest) -> None:
+        if not self.cache_config.swapping:
+            return
         blocks_to_swap_out_after = execute_model_req.get_blocks_to_swap_out()
         virtual_engine = execute_model_req.virtual_engine
         blocks_to_swap_out = torch.tensor(blocks_to_swap_out_after,

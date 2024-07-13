@@ -12,10 +12,10 @@ async def main():
     prompts = [
         "how",
         "what"
-    ] * 500
+    ] * 10
 
     # Create an LLM.
-    engine = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(distributed_executor_backend="ray", model="meta-llama/Llama-2-7b-hf", tensor_parallel_size=1, pipeline_parallel_size=1, swap_space=16))
+    engine = AsyncLLMEngine.from_engine_args(AsyncEngineArgs(distributed_executor_backend="ray", swapping=True, max_num_seqs=64, model="meta-llama/Llama-2-7b-hf", tensor_parallel_size=1, pipeline_parallel_size=2, swap_space=16))
 
     pbar = tqdm(
         total=len(prompts),
@@ -62,7 +62,7 @@ async def main():
     for output in outputs:
         prompt = output.prompt
         generated_text = output.outputs[0].text
-        # print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
+        print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
 
 if __name__ == "__main__":
     asyncio.run(main())

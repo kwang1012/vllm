@@ -288,7 +288,11 @@ class Scheduler:
             version)
 
         num_gpu_blocks = cache_config.num_gpu_blocks
+        if num_gpu_blocks and not self.cache_config.swapping:
+            num_gpu_blocks //= pipeline_parallel_size
         num_cpu_blocks = cache_config.num_cpu_blocks
+        if num_cpu_blocks and not self.cache_config.swapping:
+            num_cpu_blocks //= pipeline_parallel_size
 
         # Create the block space manager.
         self.block_manager = BlockSpaceManagerImpl(
@@ -766,7 +770,10 @@ class Scheduler:
         be swapped or preempted.
         """
         # swap in the kv cache of this virtual engine
-        blocks_to_swap_in = self.block_manager.swap_in_all()
+        if self.cache_config.swapping:
+            blocks_to_swap_in = self.block_manager.swap_in_all()
+        else:
+            blocks_to_swap_in = []
 
         # Include running requests to the budget.
         budget = SchedulingBudget(
