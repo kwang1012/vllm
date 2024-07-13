@@ -100,6 +100,8 @@ class EngineArgs:
 
     otlp_traces_endpoint: Optional[str] = None
 
+    swapping: bool = False
+
     def __post_init__(self):
         if self.tokenizer is None:
             self.tokenizer = self.model
@@ -666,7 +668,8 @@ class EngineArgs:
             cache_dtype=self.kv_cache_dtype,
             num_gpu_blocks_override=self.num_gpu_blocks_override,
             sliding_window=model_config.get_sliding_window(),
-            enable_prefix_caching=self.enable_prefix_caching)
+            enable_prefix_caching=self.enable_prefix_caching,
+            swapping=self.swapping)
         parallel_config = ParallelConfig(
             pipeline_parallel_size=self.pipeline_parallel_size,
             tensor_parallel_size=self.tensor_parallel_size,

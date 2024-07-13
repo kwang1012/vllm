@@ -990,7 +990,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
         return self.prompt_adapter_manager.list_adapters()
 
     @torch.inference_mode()
-    def capture_model(self, kv_caches: List[torch.Tensor]) -> None:
+    def capture_model(self, kv_caches: List[List[torch.Tensor]]) -> None:
         """Cuda graph capture a model.
 
         Note that CUDA graph's performance gain is negligible if number
@@ -1182,7 +1182,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         intermediate_inputs[:batch_size]
                         if intermediate_inputs is not None else None,
                         "kv_caches":
-                        kv_caches,
+                        kv_caches[virtual_engine],
                         "attn_metadata":
                         attn_metadata,
                         "memory_pool":
@@ -1380,7 +1380,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             output.hidden_states = hidden_states
 
         end = time.time()
-        logger.info("Model execution time:", end - start)
+        # logger.info("Model execution time: %f", end - start)
         return [output]
 
 
