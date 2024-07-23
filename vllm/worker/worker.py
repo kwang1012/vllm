@@ -1,4 +1,5 @@
 """A GPU worker class."""
+import asyncio
 import gc
 import os
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
@@ -58,6 +59,7 @@ class Worker(LocalOrDistributedWorkerBase):
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
         observability_config: Optional[ObservabilityConfig] = None,
     ) -> None:
+        self._loop = asyncio.get_event_loop()
         self.model_config = model_config
         self.parallel_config = parallel_config
         self.parallel_config.rank = rank
