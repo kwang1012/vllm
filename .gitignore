@@ -203,6 +203,7 @@ benchmarks/*.json
 actionlint
 shellcheck*/
 *.json
+*.png
 
 # Profiling data
 !results/profiling/*

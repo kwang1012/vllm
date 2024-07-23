@@ -173,8 +173,8 @@ class RequestTracker:
             if finished:
                 stream.finish()
 
-        if verbose and finished:
-            logger.info("Finished request %s.", request_id)
+        # if verbose and finished:
+        #     logger.info("Finished request %s.", request_id)
 
     def process_exception(self,
                           request_id: str,
@@ -205,8 +205,8 @@ class RequestTracker:
 
         self.new_requests_event.set()
 
-        if verbose:
-            logger.info("Added request %s.", request_id)
+        # if verbose:
+        #     logger.info("Added request %s.", request_id)
 
         return stream
 
@@ -397,7 +397,7 @@ class _AsyncLLMEngine(LLMEngine):
                 self._process_model_outputs(ctx=ctx)
 
                 # Log stats.
-                self.do_log_stats(scheduler_outputs, outputs)
+                self.do_log_stats(scheduler_outputs, outputs, virtual_engine=virtual_engine)
 
                 # Tracing
                 self.do_tracing(scheduler_outputs)

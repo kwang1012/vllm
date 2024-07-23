@@ -269,8 +269,8 @@ class MQLLMEngine:
                 prompt_adapter_request=request.prompt_adapter_request,
                 priority=request.priority)
 
-            if self.log_requests:
-                logger.info("Added request %s.", request.request_id)
+            # if self.log_requests:
+            #     logger.info("Added request %s.", request.request_id)
 
         except Exception as e:
             # We do not set self._errored = True here, since the error

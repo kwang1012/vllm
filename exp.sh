@@ -3,9 +3,9 @@ backend=ray
 batchSizes=(16 32 64 128 256)
 maxTokens=(100 200 300 400 500 1000)
 
-for i in $(seq 1 2); 
+for i in $(seq 2 2); 
 do
-    for j in $(seq $i 4);
+    for j in $(seq 2 2);
     do
         if [ $i -eq 1 ]
         then
@@ -23,9 +23,9 @@ do
         do
             for maxToken in "${maxTokens[@]}"
             do
-                rm result-$tp-$pp-$batchSize-$maxToken.log
+                rm results/profiling/result-$tp-$pp-$batchSize-$maxToken-wonvlink.log
                 echo Running experiment, model: $model_name, batch: $batchSize, tp: $tp, pp: $pp, maxTokens: $maxToken
-                HF_TOKEN=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 VLLM_LOGGING_FILENAME=results/profiling/result-$tp-$pp-$batchSize-$maxToken.log python experiment.py \
+                CUDA_VISIBLE_DEVICES=1,2 HF_TOKEN=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 VLLM_LOGGING_FILENAME=results/profiling/result-$tp-$pp-$batchSize-$maxToken-wonvlink.log python experiment.py \
                 --model $model_name \
                 --distributed_executor_backend $backend \
                 --max_num_seqs $batchSize \

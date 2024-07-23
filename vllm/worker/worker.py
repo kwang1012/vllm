@@ -1,4 +1,5 @@
 """A GPU worker class."""
+import asyncio
 import gc
 import os
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
