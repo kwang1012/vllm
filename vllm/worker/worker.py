@@ -1,4 +1,5 @@
 """A GPU worker class."""
+import asyncio
 import gc
 import os
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
@@ -47,7 +48,13 @@ class Worker(LocalOrDistributedWorkerBase):
         is_driver_worker: bool = False,
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
     ) -> None:
+<<<<<<< HEAD
         WorkerBase.__init__(self, vllm_config)
+=======
+        self._loop = asyncio.get_event_loop()
+        self.model_config = model_config
+        self.parallel_config = parallel_config
+>>>>>>> fb44e2bf (add asynchronous communication for pp)
         self.parallel_config.rank = rank
         self.local_rank = local_rank
         self.rank = rank
