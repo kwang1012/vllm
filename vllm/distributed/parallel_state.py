@@ -25,6 +25,7 @@ from collections import namedtuple
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from multiprocessing import shared_memory
+import time
 from typing import Any, Dict, List, Optional, Tuple, Union
 from unittest.mock import patch
 
@@ -430,9 +431,12 @@ class GroupCoordinator:
 
         # Send object size
 
+        start = time.time()
         torch.distributed.send(size_tensor,
                                dst=self.ranks[dst],
                                group=self.cpu_group)
+        end = time.time()
+        print(end - start)
 
         # Send object
         torch.distributed.send(object_tensor,

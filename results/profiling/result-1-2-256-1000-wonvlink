@@ -1,0 +1,79 @@
+INFO 07-22 12:17:27.436 llm_engine.py:175] Initializing an LLM engine (v0.5.2) with config: model='meta-llama/Llama-2-7b-hf', speculative_config=None, tokenizer='meta-llama/Llama-2-7b-hf', skip_tokenizer_init=False, tokenizer_mode=auto, revision=None, rope_scaling=None, rope_theta=None, tokenizer_revision=None, trust_remote_code=False, dtype=torch.float16, max_seq_len=4096, download_dir=None, load_format=LoadFormat.AUTO, tensor_parallel_size=1, pipeline_parallel_size=2, disable_custom_all_reduce=False, quantization=None, enforce_eager=False, kv_cache_dtype=auto, quantization_param_path=None, device_config=cuda, decoding_config=DecodingConfig(guided_decoding_backend='outlines'), observability_config=ObservabilityConfig(otlp_traces_endpoint=None), seed=0, served_model_name=meta-llama/Llama-2-7b-hf, use_v2_block_manager=False, enable_prefix_caching=False)
+INFO 07-22 12:17:31.804 utils.py:738] Found nccl from library libnccl.so.2
+INFO 07-22 12:17:31.805 pynccl.py:63] vLLM is using nccl==2.20.5
+INFO 07-22 12:17:31.804 utils.py:738] Found nccl from library libnccl.so.2
+INFO 07-22 12:17:31.805 pynccl.py:63] vLLM is using nccl==2.20.5
+ERROR 07-22 12:17:32.159 worker_base.py:369] Error executing method load_model. This might cause deadlock in distributed execution.
+ERROR 07-22 12:17:32.159 worker_base.py:369] Traceback (most recent call last):
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/worker_base.py", line 361, in execute_method
+ERROR 07-22 12:17:32.159 worker_base.py:369]     return executor(*args, **kwargs)
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/worker.py", line 139, in load_model
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.model_runner.load_model()
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/model_runner.py", line 553, in load_model
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.model = get_model(model_config=self.model_config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/__init__.py", line 21, in get_model
+ERROR 07-22 12:17:32.159 worker_base.py:369]     return loader.load_model(model_config=model_config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 275, in load_model
+ERROR 07-22 12:17:32.159 worker_base.py:369]     model = _initialize_model(model_config, self.load_config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 111, in _initialize_model
+ERROR 07-22 12:17:32.159 worker_base.py:369]     return model_class(config=model_config.hf_config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 382, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.model = LlamaModel(config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 283, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.start_layer, self.end_layer, self.layers = make_layers(
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/utils.py", line 144, in make_layers
+ERROR 07-22 12:17:32.159 worker_base.py:369]     [PPMissingLayer() for _ in range(start_layer)] + [
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/utils.py", line 145, in <listcomp>
+ERROR 07-22 12:17:32.159 worker_base.py:369]     maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 285, in <lambda>
+ERROR 07-22 12:17:32.159 worker_base.py:369]     lambda prefix: LlamaDecoderLayer(config=config,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 201, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.self_attn = LlamaAttention(
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 132, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.qkv_proj = QKVParallelLinear(
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 543, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     super().__init__(input_size=input_size,
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 281, in __init__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     self.quant_method.create_weights(
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 109, in create_weights
+ERROR 07-22 12:17:32.159 worker_base.py:369]     weight = Parameter(torch.empty(sum(output_partition_sizes),
+ERROR 07-22 12:17:32.159 worker_base.py:369]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/torch/utils/_device.py", line 78, in __torch_function__
+ERROR 07-22 12:17:32.159 worker_base.py:369]     return func(*args, **kwargs)
+ERROR 07-22 12:17:32.159 worker_base.py:369] torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 96.00 MiB. GPU  has a total capacity of 19.70 GiB of which 61.44 MiB is free. Process 2103186 has 18.20 GiB memory in use. Including non-PyTorch memory, this process has 1.43 GiB memory in use. Of the allocated memory 1.13 GiB is allocated by PyTorch, and 976.00 KiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+ERROR 07-22 12:17:32.173 worker_base.py:369] Error executing method load_model. This might cause deadlock in distributed execution.
+ERROR 07-22 12:17:32.173 worker_base.py:369] Traceback (most recent call last):
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/worker_base.py", line 361, in execute_method
+ERROR 07-22 12:17:32.173 worker_base.py:369]     return executor(*args, **kwargs)
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/worker.py", line 139, in load_model
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.model_runner.load_model()
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/worker/model_runner.py", line 553, in load_model
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.model = get_model(model_config=self.model_config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/__init__.py", line 21, in get_model
+ERROR 07-22 12:17:32.173 worker_base.py:369]     return loader.load_model(model_config=model_config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 275, in load_model
+ERROR 07-22 12:17:32.173 worker_base.py:369]     model = _initialize_model(model_config, self.load_config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/model_loader/loader.py", line 111, in _initialize_model
+ERROR 07-22 12:17:32.173 worker_base.py:369]     return model_class(config=model_config.hf_config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 382, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.model = LlamaModel(config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 283, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.start_layer, self.end_layer, self.layers = make_layers(
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/utils.py", line 144, in make_layers
+ERROR 07-22 12:17:32.173 worker_base.py:369]     [PPMissingLayer() for _ in range(start_layer)] + [
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/utils.py", line 145, in <listcomp>
+ERROR 07-22 12:17:32.173 worker_base.py:369]     maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 285, in <lambda>
+ERROR 07-22 12:17:32.173 worker_base.py:369]     lambda prefix: LlamaDecoderLayer(config=config,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 215, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.mlp = LlamaMLP(
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/models/llama.py", line 68, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.gate_up_proj = MergedColumnParallelLinear(
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 377, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     super().__init__(input_size=input_size,
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 281, in __init__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     self.quant_method.create_weights(
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/vllm/vllm/model_executor/layers/linear.py", line 109, in create_weights
+ERROR 07-22 12:17:32.173 worker_base.py:369]     weight = Parameter(torch.empty(sum(output_partition_sizes),
+ERROR 07-22 12:17:32.173 worker_base.py:369]   File "/home/kw37/miniconda3/envs/vllm/lib/python3.10/site-packages/torch/utils/_device.py", line 78, in __torch_function__
+ERROR 07-22 12:17:32.173 worker_base.py:369]     return func(*args, **kwargs)
+ERROR 07-22 12:17:32.173 worker_base.py:369] torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate 172.00 MiB. GPU 
