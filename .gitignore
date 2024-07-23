@@ -197,11 +197,9 @@ _build/
 hip_compat.h
 
 # Benchmark dataset
-<<<<<<< HEAD
 benchmarks/*.json
-=======
 *.json
+*.png
 
 # Profiling data
 !results/profiling/*
->>>>>>> bf266181 (add experimental results)
