@@ -311,6 +311,7 @@ def build_1_2_5_buckets(max_value: int) -> List[int]:
 
 def local_interval_elapsed(now: float, last_log: float,
                            local_interval: float) -> bool:
+    return True
     elapsed_time = now - last_log
     return elapsed_time > local_interval
 
@@ -353,7 +354,9 @@ class LoggingStatLogger(StatLoggerBase):
                 "Avg generation throughput: %.1f tokens/s, "
                 "Running: %d reqs, Swapped: %d reqs, "
                 "Pending: %d reqs, GPU KV cache usage: %.1f%%, "
-                "CPU KV cache usage: %.1f%%.",
+                "CPU KV cache usage: %.1f%%."
+                "Time to first token: %f, "
+                "Time per output tokens: %f, ",
                 prompt_throughput,
                 generation_throughput,
                 stats.num_running_sys,
@@ -361,6 +364,8 @@ class LoggingStatLogger(StatLoggerBase):
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
                 stats.cpu_cache_usage_sys * 100,
+                stats.time_to_first_tokens_iter[0] if len(stats.time_to_first_tokens_iter) > 0 else 0,
+                stats.time_per_output_tokens_iter[0] if len(stats.time_per_output_tokens_iter) > 0 else 0,
             )
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):
