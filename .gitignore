@@ -206,4 +206,4 @@ shellcheck*/
 *.png
 
 # Profiling data
-!results/profiling/*
+results
