@@ -202,4 +202,4 @@ benchmarks/*.json
 *.png
 
 # Profiling data
-!results/profiling/*
+results
