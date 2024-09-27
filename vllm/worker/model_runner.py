@@ -1685,10 +1685,6 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             output.model_forward_time = (orig_model_forward_time +
                                          model_forward_time)
 
-        end_time = time.time()
-
-        # print(len(output.outputs), end_time-start_time)
-
         if self.return_hidden_states:
             # we only need to pass hidden states of most recent token
             assert model_input.sampling_metadata is not None

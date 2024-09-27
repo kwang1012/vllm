@@ -23,7 +23,6 @@ If you only need to use the distributed environment without model/pipeline
 import asyncio
 import contextlib
 import pickle
-import time
 import weakref
 from collections import namedtuple
 from contextlib import contextmanager, nullcontext
@@ -524,33 +523,21 @@ class GroupCoordinator:
             "as the current rank.")
 
         # Serialize object to tensor and get the size as well
-        start = time.time()
         object_tensor = torch.frombuffer(pickle.dumps(obj), dtype=torch.uint8).cuda(self.device)
-        end = time.time()
-        logger.info("deserialization time: %.4f", end-start)
 
-        start = time.time()
         size_tensor = torch.tensor([object_tensor.numel()],
                                    dtype=torch.long, device=self.device)
-        end = time.time()
-        logger.info("size tensor creation time: %.4f", end-start)
 
         # Send object size
 
-        start = time.time()
         torch.distributed.send(size_tensor,
                                dst=self.ranks[dst],
                                group=self.device_group)
-        end = time.time()
-        logger.info("send size(%s)(%d) time: %.4f", size_tensor.shape, object_tensor.numel(), end-start)
 
         # Send object
-        start = time.time()
         torch.distributed.send(object_tensor,
                                dst=self.ranks[dst],
                                group=self.device_group)
-        end = time.time()
-        logger.info("send object(%s) time: %.4f", object_tensor.shape, end-start)
 
         return None
 
@@ -708,10 +695,7 @@ class GroupCoordinator:
             # `metadata_list` lives in CPU memory.
             # `send_object_list` has serialization & deserialization,
             # all happening on CPU. Therefore, we can use the CPU group.
-            start = time.time()
             self.send_object(metadata_list, dst=dst)
-            end = time.time()
-            logger.info("Send metadata time: %.4f", end-start)
             for tensor in tensor_list:
                 if tensor.numel() == 0:
                     # Skip sending empty tensors.
@@ -732,7 +716,6 @@ class GroupCoordinator:
                     torch.distributed.send(tensor,
                                         dst=self.ranks[dst],
                                         group=group)
-            logger.info("Send tensor time: %.4f", time.time()-end)
         return None
 
     def recv_tensor_dict(
