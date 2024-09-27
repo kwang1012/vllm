@@ -1356,8 +1356,6 @@ class LLMEngine:
         assert seq_group_metadata_list is not None
         assert scheduler_outputs is not None
 
-        start_time = time.time()
-
         if not scheduler_outputs.is_empty():
 
             # Check if we have a cached last_output from the previous iteration.
