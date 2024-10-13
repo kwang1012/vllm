@@ -796,6 +796,9 @@ class SequenceGroup:
     def get_finished_seqs(self) -> List[Sequence]:
         return self.seqs if self.first_seq.is_finished() else []
 
+    def get_output_progress(self) -> int:
+        return sum([seq.get_output_len() for seq in self.seqs])
+
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
         seq = self.first_seq

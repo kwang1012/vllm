@@ -515,7 +515,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                     seq_data.mrope_position_delta,
                     context_len,
                     seq_len,
-                )
+            )
 
     def _compute_for_prefix_cache_hit(
             self, inter_data: InterDataForSeqGroup, seq_idx: int,
@@ -1477,7 +1477,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         intermediate_inputs[:batch_size]
                         if intermediate_inputs is not None else None,
                         "kv_caches":
-                        kv_caches[virtual_engine],
+                        kv_caches,
                         "attn_metadata":
                         attn_metadata,
                         "memory_pool":
@@ -1866,7 +1866,7 @@ class CUDAGraphRunner(nn.Module):
 
         if intermediate_tensors is not None:
             for key in intermediate_tensors.tensors:
-                if key != "model_execute_time" and key != "model_forward_time":
+                if key not in ("model_execute_time", "model_forward_time"):
                     self.input_buffers[key].copy_(intermediate_tensors[key],
                                                   non_blocking=True)
         if self._is_encoder_decoder_model:
