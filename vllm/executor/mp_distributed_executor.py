@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from typing import Any, Callable, List, Optional, Union
 
 import cloudpickle
@@ -204,7 +205,11 @@ class MultiprocessingDistributedExecutor(DistributedExecutorBase):
         execute_model_req: Optional[ExecuteModelRequest] = None
     ) -> List[SamplerOutput]:
         if not self.tp_driver_workers:
-            return await self.driver_exec_model(execute_model_req)
+            output, info = await self.driver_exec_model(execute_model_req)
+            for o in output:
+                o.stage_info = [info]
+                o.latency = 0
+            return output
 
         if self.pp_locks is None:
             # This locks each pipeline parallel stage so multiple virtual
@@ -215,7 +220,8 @@ class MultiprocessingDistributedExecutor(DistributedExecutorBase):
                 asyncio.Lock()
                 for _ in range(self.parallel_config.pipeline_parallel_size)
             ]
-
+            
+        start_time = time.time()
         tasks = [
             asyncio.create_task(
                 _run_task_with_lock(self.driver_exec_model, self.pp_locks[0],
@@ -229,9 +235,15 @@ class MultiprocessingDistributedExecutor(DistributedExecutorBase):
                                         self.pp_locks[pp_rank],
                                         "execute_model", execute_model_req)))
         results = await asyncio.gather(*tasks)
+        
+        start_time = time.time() - start_time
+        output = results[-1][0]
 
+        for o in output:
+            o.stage_info = [r[1] for r in results]
+            o.latency = start_time
         # Only the last PP stage has the final results.
-        return results[-1]
+        return output
 
     async def _start_worker_execution_loop(self):
         coros = [

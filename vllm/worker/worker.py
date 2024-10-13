@@ -311,15 +311,19 @@ class Worker(LocalOrDistributedWorkerBase):
 
     def _init_cache_engine(self):
         assert self.cache_config.num_gpu_blocks is not None
-        self.cache_engine = [
-            CacheEngine(self.cache_config, self.model_config,
+        self.cache_engine = CacheEngine(self.cache_config, self.model_config,
                         self.parallel_config, self.device_config)
-            for _ in range(self.parallel_config.pipeline_parallel_size)
-        ]
-        self.gpu_cache = [
-            self.cache_engine[ve].gpu_cache
-            for ve in range(self.parallel_config.pipeline_parallel_size)
-        ]
+        # self.cache_engine = [
+        #     CacheEngine(self.cache_config, self.model_config,
+        #                 self.parallel_config, self.device_config)
+        #     for _ in range(self.parallel_config.pipeline_parallel_size)
+        # ]
+        
+        self.gpu_cache = self.cache_engine.gpu_cache
+        # self.gpu_cache = [
+        #     self.cache_engine[ve].gpu_cache
+        #     for ve in range(self.parallel_config.pipeline_parallel_size)
+        # ]
         bind_kv_cache(self.compilation_config.static_forward_context,
                       self.gpu_cache)
 
@@ -386,15 +390,15 @@ class Worker(LocalOrDistributedWorkerBase):
         # Issue cache operations.
         if (worker_input.blocks_to_swap_in is not None
                 and worker_input.blocks_to_swap_in.numel() > 0):
-            self.cache_engine[virtual_engine].swap_in(
+            self.cache_engine.swap_in(
                 worker_input.blocks_to_swap_in)
         if (worker_input.blocks_to_swap_out is not None
                 and worker_input.blocks_to_swap_out.numel() > 0):
-            self.cache_engine[virtual_engine].swap_out(
+            self.cache_engine.swap_out(
                 worker_input.blocks_to_swap_out)
         if (worker_input.blocks_to_copy is not None
                 and worker_input.blocks_to_copy.numel() > 0):
-            self.cache_engine[virtual_engine].copy(worker_input.blocks_to_copy)
+            self.cache_engine.copy(worker_input.blocks_to_copy)
 
     def _get_cached_seq_group_metadata(
             self,

@@ -44,6 +44,9 @@ class Stats:
     time_to_first_tokens_iter: List[float]
     time_per_output_tokens_iter: List[float]
     num_preemption_iter: int
+    actual_num_batched_tokens: int
+    stage_info: List[dict]
+    latency: float
 
     # Request stats (should have _requests suffix)
     #   Latency
@@ -67,6 +70,7 @@ class Stats:
     max_lora: str
 
     spec_decode_metrics: Optional["SpecDecodeWorkerMetrics"] = None
+    
 
 
 class SupportsMetricsInfo(Protocol):

@@ -843,6 +843,9 @@ class SequenceGroup:
 
         return [seq for seq in self.seqs if seq.is_finished()]
 
+    def get_output_progress(self) -> int:
+        return sum([seq.get_output_len() for seq in self.seqs])
+
     def update_num_computed_tokens(self, num_new_computed_tokens: int):
         """Update number of tokens computed so far."""
         for seq in self.seqs:

@@ -370,7 +370,10 @@ class LlamaModel(nn.Module):
                 "residual": residual
             })
 
+        start = time.time()
         hidden_states, _ = self.norm(hidden_states, residual)
+        # print("Norm time:", time.time() - start)
+        # print("Stage time:", time.time() - t_start)
         return hidden_states
 
     def load_weights(self, weights: Iterable[Tuple[str,

@@ -383,7 +383,6 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
-        start_time = time.perf_counter()
 
         inputs = self.prepare_input(execute_model_req)
         if inputs is None:
@@ -400,23 +399,31 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         intermediate_tensors = None
         orig_model_execute_time = 0.0
+        recv_timestamp = None
+        model_recv_time = None
         if not get_pp_group().is_first_rank:
+            recv_timestamp = start = time.time()
             intermediate_tensors = IntermediateTensors(
-                get_pp_group().recv_tensor_dict(
-                    all_gather_group=get_tp_group()))
+                get_pp_group().recv_tensor_dict(all_gather_group=get_tp_group()))
+            model_recv_time = time.time() - start
+            
             if (self.observability_config is not None
                     and self.observability_config.collect_model_execute_time):
                 orig_model_execute_time = intermediate_tensors.tensors.get(
                     "model_execute_time", torch.tensor(0)).item()
 
+        torch.cuda.synchronize()
+        model_exec_timestamp = time.time()
+        start_time = time.perf_counter()
         output = self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache[worker_input.virtual_engine]
+            kv_caches=self.kv_cache
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             num_steps=num_steps,
             **kwargs,
         )
+        torch.cuda.synchronize()
 
         model_execute_time = time.perf_counter() - start_time
         if not get_pp_group().is_last_rank:
@@ -426,10 +433,20 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     and self.observability_config.collect_model_execute_time):
                 output.tensors["model_execute_time"] = torch.tensor(
                     model_execute_time + orig_model_execute_time)
-            self._loop.create_task(get_pp_group().send_tensor_dict(output.tensors,
-                                            all_gather_group=get_tp_group()))
             
-            return [None]
+            send_timestamp = time.time()
+            get_pp_group().send_tensor_dict(output.tensors,
+                                            all_gather_group=get_tp_group())
+            model_send_time = time.time() - send_timestamp
+            
+            return [None], {
+                "send_time": model_send_time,
+                "recv_time": model_recv_time,
+                "exec_time": model_execute_time,
+                "send_timestamp": send_timestamp,
+                "recv_timestamp": recv_timestamp,
+                "exec_timestamp": model_exec_timestamp,
+                }
         if (self.observability_config is not None
                 and self.observability_config.collect_model_execute_time
                 and output is not None):
@@ -438,7 +455,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                                         model_execute_time)
 
         # output is List[SamplerOutput]
-        return output
+        return output, {
+            "send_time": None,
+            "recv_time": model_recv_time,
+            "exec_time": model_execute_time,
+            "send_timestamp": None,
+            "recv_timestamp": recv_timestamp,
+            "exec_timestamp": model_exec_timestamp,
+        }
 
     def _execute_model_spmd(
         self,
@@ -469,7 +493,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         return self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache[worker_input.virtual_engine]
+            kv_caches=self.kv_cache
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             **kwargs,

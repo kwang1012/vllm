@@ -40,11 +40,11 @@ class CacheEngine:
 
         self.block_size = cache_config.block_size
         self.num_gpu_blocks = cache_config.num_gpu_blocks
-        if self.num_gpu_blocks:
-            self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
+        # if self.num_gpu_blocks:
+        #     self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
         self.num_cpu_blocks = cache_config.num_cpu_blocks
-        if self.num_cpu_blocks:
-            self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
+        # if self.num_cpu_blocks:
+        #     self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         if cache_config.cache_dtype == "auto":
             self.dtype = model_config.dtype
@@ -62,7 +62,7 @@ class CacheEngine:
         with DeviceMemoryProfiler() as m:
             self.gpu_cache = self._allocate_kv_cache(
                 self.num_gpu_blocks, self.device_config.device_type)
-        logger.info("Allocate KV cache took %.4f GB",
+        logger.info("Allocating KV cache took %.4f GB",
                     m.consumed_memory / float(2**30))
         self.cpu_cache = self._allocate_kv_cache(self.num_cpu_blocks, "cpu")
 

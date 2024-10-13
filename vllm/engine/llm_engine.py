@@ -13,6 +13,7 @@ from typing import Set, Type, Union, cast, overload
 import torch
 from typing_extensions import TypeVar, deprecated
 
+from vllm.core.interfaces import BlockSpaceManager
 import vllm.envs as envs
 from vllm.config import (DecodingConfig, LoRAConfig, ModelConfig,
                          ObservabilityConfig, ParallelConfig, SchedulerConfig,
@@ -341,12 +342,29 @@ class LLMEngine:
         # of request outputs to asyncio queues
         self.process_request_outputs_callback: Optional[Callable] = None
 
+        version = "v1"
+        if self.scheduler_config.use_v2_block_manager:
+            version = "v2"
+        if self.scheduler_config.embedding_mode:
+            version = "embedding"
+            
+        BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
+            version)
+        
+        block_manager = BlockSpaceManagerImpl(
+            block_size=self.cache_config.block_size,
+            num_gpu_blocks=self.cache_config.num_gpu_blocks,
+            num_cpu_blocks=self.cache_config.num_cpu_blocks,
+            sliding_window=self.cache_config.sliding_window,
+            enable_caching=self.cache_config.enable_prefix_caching)
+        
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
             Scheduler(
                 self.scheduler_config, self.cache_config, self.lora_config,
+                block_manager,
                 self.parallel_config.pipeline_parallel_size,
                 self.async_callbacks[v_id]
                 if self.model_config.use_async_output_proc else None)
@@ -1622,6 +1640,13 @@ class LLMEngine:
         max_num_generation_tokens_requests: List[int] = []
         max_tokens_requests: List[int] = []
         finished_reason_requests: List[str] = []
+        actual_num_batched_tokens = None
+        stage_info: List[dict] = []
+        latency = None
+        
+        if model_output:
+            stage_info = model_output[0].stage_info
+            latency = model_output[0].latency
 
         # Lora requests
         running_lora_adapters = dict(
@@ -1791,6 +1816,9 @@ class LLMEngine:
             time_per_output_tokens_iter=time_per_output_tokens_iter,
             spec_decode_metrics=spec_decode_metrics,
             num_preemption_iter=num_preemption_iter,
+            actual_num_batched_tokens=actual_num_batched_tokens,
+            stage_info=stage_info,
+            latency=latency,
 
             # Request stats
             #   Latency

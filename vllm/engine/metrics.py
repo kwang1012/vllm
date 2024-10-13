@@ -1,4 +1,5 @@
 import time
+import json
 from typing import TYPE_CHECKING
 from typing import Counter as CollectionsCounter
 from typing import Dict, List, Optional, Type, Union, cast
@@ -263,6 +264,7 @@ class Metrics:
 
 # end-metrics-definitions
 
+
     def _unregister_vllm_metrics(self) -> None:
         for collector in list(prometheus_client.REGISTRY._collector_to_names):
             if hasattr(collector, "_name") and "vllm" in collector._name:
@@ -461,7 +463,10 @@ class LoggingStatLogger(StatLoggerBase):
                 "CPU KV cache usage: %.1f%%, "
                 "Time to first token: %f, "
                 "Time per output tokens: %f, "
-                "GPU utilization: %d.",
+                "GPU utilization: %d, "
+                "Batch size: %d, "
+                "Latency: %f, "
+                "Stage info: %s.",
                 virtual_engine,
                 prompt_throughput,
                 generation_throughput,
@@ -470,9 +475,14 @@ class LoggingStatLogger(StatLoggerBase):
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
                 stats.cpu_cache_usage_sys * 100,
-                stats.time_to_first_tokens_iter[0] if len(stats.time_to_first_tokens_iter) > 0 else 0,
-                stats.time_per_output_tokens_iter[0] if len(stats.time_per_output_tokens_iter) > 0 else 0,
-                torch.cuda.utilization()
+                stats.time_to_first_tokens_iter[0] if len(
+                    stats.time_to_first_tokens_iter) > 0 else 0,
+                stats.time_per_output_tokens_iter[0] if len(
+                    stats.time_per_output_tokens_iter) > 0 else 0,
+                torch.cuda.utilization(),
+                stats.actual_num_batched_tokens,
+                stats.latency,
+                ">".join(json.dumps(t).replace(":", ";").replace(",", "*") for t in stats.stage_info),
             )
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):

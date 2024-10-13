@@ -23,7 +23,9 @@ _FORMAT = (f"{VLLM_LOGGING_PREFIX}%(levelname)s %(asctime)s "
            "%(filename)s:%(lineno)d] %(message)s")
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
-BLOCK_SIZE_LIST = []
+handlers = ["file_handler"]
+if VLLM_LOGGING_FILENAME == "results.log":
+    handlers.append("vllm")
 
 DEFAULT_LOGGING_CONFIG = {
     "formatters": {
@@ -50,7 +52,7 @@ DEFAULT_LOGGING_CONFIG = {
     },
     "loggers": {
         "vllm": {
-            "handlers": ["file_handler"],
+            "handlers": handlers,
             "level": "DEBUG",
             "propagate": False,
         },
