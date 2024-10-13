@@ -10,6 +10,7 @@ from vllm.engine.metrics_types import (StatLoggerBase, Stats,
                                        SupportsMetricsInfo)
 from vllm.executor.ray_utils import ray
 from vllm.logger import init_logger
+import vllm.envs as envs
 
 if ray is not None:
     from ray.util import metrics as ray_metrics
@@ -194,6 +195,7 @@ class Metrics:
 
 # end-metrics-definitions
 
+
     def _unregister_vllm_metrics(self) -> None:
         for collector in list(prometheus_client.REGISTRY._collector_to_names):
             if hasattr(collector, "_name") and "vllm" in collector._name:
@@ -312,7 +314,8 @@ def build_1_2_5_buckets(max_value: int) -> List[int]:
 
 def local_interval_elapsed(now: float, last_log: float,
                            local_interval: float) -> bool:
-    return True
+    if envs.VLLM_LOGGING_FILENAME:
+        return True
     elapsed_time = now - last_log
     return elapsed_time > local_interval
 
@@ -350,7 +353,7 @@ class LoggingStatLogger(StatLoggerBase):
                 last_log=self.last_local_log)
 
             # Log to stdout.
-            logger.info(
+            logger.debug(
                 "Virtual engine: %d, "
                 "Avg prompt throughput: %.1f tokens/s, "
                 "Avg generation throughput: %.1f tokens/s, "
@@ -359,7 +362,9 @@ class LoggingStatLogger(StatLoggerBase):
                 "CPU KV cache usage: %.1f%%, "
                 "Time to first token: %f, "
                 "Time per output tokens: %f, "
-                "GPU utilization: %d.",
+                "GPU utilization: %d, "
+                "Batch size: %d, "
+                "Stage time: %s.",
                 virtual_engine,
                 prompt_throughput,
                 generation_throughput,
@@ -368,9 +373,13 @@ class LoggingStatLogger(StatLoggerBase):
                 stats.num_waiting_sys,
                 stats.gpu_cache_usage_sys * 100,
                 stats.cpu_cache_usage_sys * 100,
-                stats.time_to_first_tokens_iter[0] if len(stats.time_to_first_tokens_iter) > 0 else 0,
-                stats.time_per_output_tokens_iter[0] if len(stats.time_per_output_tokens_iter) > 0 else 0,
-                torch.cuda.utilization()
+                stats.time_to_first_tokens_iter[0] if len(
+                    stats.time_to_first_tokens_iter) > 0 else 0,
+                stats.time_per_output_tokens_iter[0] if len(
+                    stats.time_per_output_tokens_iter) > 0 else 0,
+                torch.cuda.utilization(),
+                stats.actual_num_batched_tokens,
+                " ".join(str(t) for t in stats.model_execute_time_per_stage),
             )
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):

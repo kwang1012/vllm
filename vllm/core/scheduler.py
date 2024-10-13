@@ -301,6 +301,7 @@ class Scheduler:
         scheduler_config: SchedulerConfig,
         cache_config: CacheConfig,
         lora_config: Optional[LoRAConfig],
+        block_manager: Optional[BlockSpaceManager] = None,
         pipeline_parallel_size: int = 1,
         output_proc_callback: Optional[Callable] = None,
         virtual_engine: Optional[int] = 0
@@ -313,30 +314,32 @@ class Scheduler:
         # LoRAs. This should be improved in the future.
         self.lora_config = lora_config
 
-        version = "v1"
-        if self.scheduler_config.use_v2_block_manager:
-            version = "v2"
-        if self.scheduler_config.embedding_mode:
-            version = "embedding"
+        if block_manager is not None:
+            self.block_manager = block_manager
+        else:
+            version = "v1"
+            if self.scheduler_config.use_v2_block_manager:
+                version = "v2"
+            if self.scheduler_config.embedding_mode:
+                version = "embedding"
+            BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
+                version)
 
-        BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
-            version)
+            num_gpu_blocks = cache_config.num_gpu_blocks
+            if num_gpu_blocks:
+                num_gpu_blocks //= pipeline_parallel_size
 
-        num_gpu_blocks = cache_config.num_gpu_blocks
-        if num_gpu_blocks:
-            num_gpu_blocks //= pipeline_parallel_size
+            num_cpu_blocks = cache_config.num_cpu_blocks
+            if num_cpu_blocks:
+                num_cpu_blocks //= pipeline_parallel_size
 
-        num_cpu_blocks = cache_config.num_cpu_blocks
-        if num_cpu_blocks:
-            num_cpu_blocks //= pipeline_parallel_size
-
-        # Create the block space manager.
-        self.block_manager = BlockSpaceManagerImpl(
-            block_size=self.cache_config.block_size,
-            num_gpu_blocks=num_gpu_blocks,
-            num_cpu_blocks=num_cpu_blocks,
-            sliding_window=self.cache_config.sliding_window,
-            enable_caching=self.cache_config.enable_prefix_caching)
+            # Create the block space manager.
+            self.block_manager = BlockSpaceManagerImpl(
+                block_size=self.cache_config.block_size,
+                num_gpu_blocks=num_gpu_blocks,
+                num_cpu_blocks=num_cpu_blocks,
+                sliding_window=self.cache_config.sliding_window,
+                enable_caching=self.cache_config.enable_prefix_caching)
 
         # Sequence groups in the WAITING state.
         # Contain new prefill or preempted requests.
@@ -967,9 +970,9 @@ class Scheduler:
             self.prev_prompt = True
 
         if len(prefills) > 0:
-            logger.info("Virtual engine: %d, schedule prefills: %d sequences", self.virtual_engine, len(prefills))
+            logger.debug("Virtual engine: %d, schedule prefills: %d sequences", self.virtual_engine, len(prefills))
         if len(recomputes) > 0:
-            logger.info("Virtual engine: %d, schedule recomputes: %d sequences", self.virtual_engine, len(recomputes))
+            logger.debug("Virtual engine: %d, schedule recomputes: %d sequences", self.virtual_engine, len(recomputes))
             
         return SchedulerPrefillOutputs(
             seq_groups=seq_groups,
@@ -1431,7 +1434,7 @@ class Scheduler:
         blocks_to_swap_out: List[Tuple[int, int]],
         preemption_mode: Optional[PreemptionMode] = None,
     ) -> PreemptionMode:
-        logger.info("Virtual engine: %d, preempt seq group %s", self.virtual_engine, seq_group.request_id)
+        logger.debug("Virtual engine: %d, preempt seq group %s, current progress: %d", self.virtual_engine, seq_group.request_id, seq_group.get_output_progress())
         # If preemption mode is not specified, we determine the mode as follows:
         # We use recomputation by default since it incurs lower overhead than
         # swapping. However, when the sequence group has multiple sequences

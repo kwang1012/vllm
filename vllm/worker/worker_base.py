@@ -291,7 +291,10 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 return None
             return self._get_driver_input_and_broadcast(execute_model_req)
         else:
-            return self._get_worker_input_from_broadcast()
+            start = time.time()
+            worker_input = self._get_worker_input_from_broadcast()
+            print("Prepare input time:", time.time() - start)
+            return worker_input
 
     def execute_model(
         self,
@@ -316,10 +319,17 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         intermediate_tensors = None
         orig_model_execute_time = 0.0
+        orig_model_execute_time_list: torch.Tensor | None = None
         if not get_pp_group().is_first_rank:
+            start = time.time()
             intermediate_tensors = IntermediateTensors(
-                get_pp_group().recv_tensor_dict(
-                    all_gather_group=get_tp_group()))
+                get_pp_group().recv_tensor_dict(all_gather_group=get_tp_group()))
+            model_recv_time = time.time() - start
+            
+            logger.debug("Virtual engine: %s, Recv time: %s", execute_model_req.virtual_engine, model_recv_time)
+            
+            orig_model_execute_time_list = intermediate_tensors.tensors.get("model_execute_time_list")
+            
             if (self.observability_config is not None
                     and self.observability_config.collect_model_execute_time):
                 orig_model_execute_time = intermediate_tensors.tensors.get(
@@ -327,7 +337,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         output = self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache[worker_input.virtual_engine]
+            kv_caches=self.kv_cache
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             num_steps=num_steps,
@@ -341,8 +351,16 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     and self.observability_config.collect_model_execute_time):
                 output.tensors["model_execute_time"] = torch.tensor(
                     model_execute_time + orig_model_execute_time)
-            self._loop.create_task(get_pp_group().send_tensor_dict(output.tensors,
-                                            all_gather_group=get_tp_group()))
+            if orig_model_execute_time_list is None:
+                output.tensors["model_execute_time_list"] = torch.Tensor([model_execute_time])
+            else:
+                output.tensors["model_execute_time_list"] = torch.cat((orig_model_execute_time_list, torch.Tensor([model_execute_time])))
+            
+            start = time.time()
+            get_pp_group().send_tensor_dict(output.tensors,
+                                            all_gather_group=get_tp_group())
+            model_send_time = time.time() - start
+            logger.debug("Virtual engine: %s, Send time: %s", execute_model_req.virtual_engine, model_send_time)
             
             return [None]
         if (self.observability_config is not None
@@ -351,6 +369,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             for o in output:
                 o.model_execute_time = (orig_model_execute_time +
                                         model_execute_time)
+        
+        if orig_model_execute_time_list is None:
+            model_execute_time_list = [model_execute_time]
+        else:
+            model_execute_time_list = torch.cat((orig_model_execute_time_list, torch.Tensor([model_execute_time]))).tolist()
+        
+        for o in output:
+            o.model_execute_time_list = model_execute_time_list
 
         # output is List[SamplerOutput]
         return output
@@ -384,7 +410,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         return self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache[worker_input.virtual_engine]
+            kv_caches=self.kv_cache
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             **kwargs,

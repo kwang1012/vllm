@@ -23,6 +23,7 @@ If you only need to use the distributed environment without model/pipeline
 import asyncio
 import contextlib
 import pickle
+import time
 import weakref
 from collections import namedtuple
 from contextlib import contextmanager, nullcontext
@@ -523,21 +524,21 @@ class GroupCoordinator:
             "as the current rank.")
 
         # Serialize object to tensor and get the size as well
-        object_tensor = torch.frombuffer(pickle.dumps(obj), dtype=torch.uint8).cuda(self.device)
+        object_tensor = torch.frombuffer(pickle.dumps(obj), dtype=torch.uint8)
 
         size_tensor = torch.tensor([object_tensor.numel()],
-                                   dtype=torch.long, device=self.device)
+                                   dtype=torch.long, device="cpu")
 
         # Send object size
 
         torch.distributed.send(size_tensor,
                                dst=self.ranks[dst],
-                               group=self.device_group)
+                               group=self.cpu_group)
 
         # Send object
         torch.distributed.send(object_tensor,
                                dst=self.ranks[dst],
-                               group=self.device_group)
+                               group=self.cpu_group)
 
         return None
 
@@ -551,27 +552,27 @@ class GroupCoordinator:
             "Invalid source rank. Source rank is the same as the current rank."
         )
 
-        size_tensor = torch.empty(1, dtype=torch.long, device=self.device)
+        size_tensor = torch.empty(1, dtype=torch.long, device="cpu")
 
         # Receive object size
         rank_size = torch.distributed.recv(size_tensor,
                                            src=self.ranks[src],
-                                           group=self.device_group)
+                                           group=self.cpu_group)
 
         # Tensor to receive serialized objects into.
         object_tensor = torch.empty(  # type: ignore[call-overload]
             size_tensor.item(),  # type: ignore[arg-type]
             dtype=torch.uint8,
-            device=self.device)
+            device="cpu")
 
         rank_object = torch.distributed.recv(object_tensor,
                                              src=self.ranks[src],
-                                             group=self.device_group)
+                                             group=self.cpu_group)
 
         assert rank_object == rank_size, (
             "Received object sender rank does not match the size sender rank.")
 
-        obj = pickle.loads(object_tensor.cpu().numpy().tobytes())
+        obj = pickle.loads(object_tensor.numpy().tobytes())
 
         return obj
 
@@ -660,7 +661,7 @@ class GroupCoordinator:
                 async_handle.wait()
         return tensor_dict
 
-    async def send_tensor_dict(
+    def send_tensor_dict(
         self,
         tensor_dict: Dict[str, Union[torch.Tensor, Any]],
         dst: Optional[int] = None,
@@ -673,10 +674,11 @@ class GroupCoordinator:
         if not torch.distributed.is_initialized() or self.world_size == 1:
             return tensor_dict
 
+        # async with self.send_lock:
         all_gather_size = (1 if all_gather_group is None else
-                           all_gather_group.world_size)
+                        all_gather_group.world_size)
         all_gather_rank = (0 if all_gather_group is None else
-                           all_gather_group.rank_in_group)
+                        all_gather_group.rank_in_group)
 
         group = self.device_group
         metadata_group = self.cpu_group
@@ -690,32 +692,31 @@ class GroupCoordinator:
             tensor_dict,
             dict), f"Expecting a dictionary, got {type(tensor_dict)}"
         
-        async with self.send_lock:
-            metadata_list, tensor_list = _split_tensor_dict(tensor_dict)
-            # `metadata_list` lives in CPU memory.
-            # `send_object_list` has serialization & deserialization,
-            # all happening on CPU. Therefore, we can use the CPU group.
-            self.send_object(metadata_list, dst=dst)
-            for tensor in tensor_list:
-                if tensor.numel() == 0:
-                    # Skip sending empty tensors.
-                    continue
+        metadata_list, tensor_list = _split_tensor_dict(tensor_dict)
+        # `metadata_list` lives in CPU memory.
+        # `send_object_list` has serialization & deserialization,
+        # all happening on CPU. Therefore, we can use the CPU group.
+        self.send_object(metadata_list, dst=dst)
+        for tensor in tensor_list:
+            if tensor.numel() == 0:
+                # Skip sending empty tensors.
+                continue
 
-                # send-allgather: send only a slice, then do allgather.
-                if (all_gather_group is not None
-                        and tensor.numel() % all_gather_size == 0):
-                    tensor = tensor.reshape(all_gather_size, -1)[all_gather_rank]
+            # send-allgather: send only a slice, then do allgather.
+            if (all_gather_group is not None
+                    and tensor.numel() % all_gather_size == 0):
+                tensor = tensor.reshape(all_gather_size, -1)[all_gather_rank]
 
-                if tensor.is_cpu:
-                    # use metadata_group for CPU tensors
-                    torch.distributed.send(tensor,
-                                        dst=self.ranks[dst],
-                                        group=metadata_group)
-                else:
-                    # use group for GPU tensors
-                    torch.distributed.send(tensor,
-                                        dst=self.ranks[dst],
-                                        group=group)
+            if tensor.is_cpu:
+                # use metadata_group for CPU tensors
+                torch.distributed.send(tensor,
+                                    dst=self.ranks[dst],
+                                    group=metadata_group)
+            else:
+                # use group for GPU tensors
+                torch.distributed.send(tensor,
+                                    dst=self.ranks[dst],
+                                    group=group)
         return None
 
     def recv_tensor_dict(

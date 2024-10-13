@@ -20,7 +20,11 @@ VLLM_LOGGING_FILENAME = envs.VLLM_LOGGING_FILENAME
 _FORMAT = "%(levelname)s %(asctime)s.%(msecs)03d %(filename)s:%(lineno)d] %(message)s"
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
-BLOCK_SIZE_LIST = []
+handlers = []
+if not VLLM_LOGGING_FILENAME:
+    handlers = ["vllm"]
+else:
+    handlers = ["file_handler"]
 
 DEFAULT_LOGGING_CONFIG = {
     "formatters": {
@@ -39,15 +43,15 @@ DEFAULT_LOGGING_CONFIG = {
         },
         "file_handler": {
             "formatter": "vllm",
-            "level": VLLM_LOGGING_LEVEL,
+            "level": "DEBUG",
             "class": "logging.FileHandler",
-            "filename": VLLM_LOGGING_FILENAME,
+            "filename": VLLM_LOGGING_FILENAME or "results.log",
             "mode": "a",
         },
     },
     "loggers": {
         "vllm": {
-            "handlers": ["file_handler"],
+            "handlers": handlers,
             "level": "DEBUG",
             "propagate": False,
         },

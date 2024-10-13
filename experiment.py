@@ -11,7 +11,7 @@ from vllm.utils import FlexibleArgumentParser, random_uuid
 async def main(args):
     # Sample prompts.
     prompts = [
-        "How is the weather in Champaign?",
+        args.prompt,
     ] * args.num_prompts
 
     # Create an LLM.
@@ -55,6 +55,7 @@ if __name__ == "__main__":
     parser = FlexibleArgumentParser()
     parser.add_argument("--num-prompts", default=1000, type=int)
     parser.add_argument("--prompt-len", default=10, type=int)
+    parser.add_argument("--prompt", default="How is the weather in Champaign?", type=str)
     parser.add_argument("--max-tokens", default=100, type=int)
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()

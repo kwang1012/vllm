@@ -6,10 +6,11 @@ prompts = [
     # "The president of the United States is",
     # "The capital of France is",
     # "The future of AI is",
-    "What " * 50
+    # "What " * 50
+    "Santa Clara is a"
 ]
 # Create a sampling params object.
-sampling_params = SamplingParams(temperature=0.8, top_p=0.95)
+sampling_params = SamplingParams(temperature=0, max_tokens=100)
 
 # Create an LLM.
 llm = LLM(model="meta-llama/Llama-2-7b-chat-hf")

@@ -116,6 +116,8 @@ class SamplerOutput(
     # Time taken in the model execute function. This will include model forward,
     # block/sync across workers, cpu-gpu sync time and sampling time.
     model_execute_time: Optional[float] = None
+    
+    model_execute_time_list: list[float] = []
 
     def __getitem__(self, idx: int):
         return self.outputs[idx]

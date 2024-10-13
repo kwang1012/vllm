@@ -42,6 +42,8 @@ class Stats:
     time_to_first_tokens_iter: List[float]
     time_per_output_tokens_iter: List[float]
     num_preemption_iter: int
+    actual_num_batched_tokens: int
+    model_execute_time_per_stage: List[float]
 
     # Request stats (should have _requests suffix)
     #   Latency
@@ -54,6 +56,7 @@ class Stats:
     finished_reason_requests: List[str]
 
     spec_decode_metrics: Optional["SpecDecodeWorkerMetrics"] = None
+    
 
 
 class SupportsMetricsInfo(Protocol):

@@ -11,6 +11,7 @@ from typing import Set, Type, Union
 import torch
 from typing_extensions import TypeVar
 
+from vllm.core.interfaces import BlockSpaceManager
 import vllm.envs as envs
 from vllm.config import (CacheConfig, DecodingConfig, DeviceConfig,
                          EngineConfig, LoadConfig, LoRAConfig, ModelConfig,
@@ -406,12 +407,29 @@ class LLMEngine:
         # of request outputs to asyncio queues
         self.process_request_outputs_callback: Optional[Callable] = None
 
+        version = "v1"
+        if self.scheduler_config.use_v2_block_manager:
+            version = "v2"
+        if self.scheduler_config.embedding_mode:
+            version = "embedding"
+            
+        BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
+            version)
+        
+        block_manager = BlockSpaceManagerImpl(
+            block_size=self.cache_config.block_size,
+            num_gpu_blocks=self.cache_config.num_gpu_blocks,
+            num_cpu_blocks=self.cache_config.num_cpu_blocks,
+            sliding_window=self.cache_config.sliding_window,
+            enable_caching=self.cache_config.enable_prefix_caching)
+        
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
         self.scheduler = [
             Scheduler(
                 scheduler_config, cache_config, lora_config,
+                block_manager,
                 parallel_config.pipeline_parallel_size,
                 self.async_callbacks[v_id]
                 if model_config.use_async_output_proc else None)
@@ -1449,17 +1467,13 @@ class LLMEngine:
         num_total_gpu = self.cache_config.num_gpu_blocks
         gpu_cache_usage_sys = 0.
         if num_total_gpu is not None:
-            num_free_gpu = sum(
-                scheduler.block_manager.get_num_free_gpu_blocks()
-                for scheduler in self.scheduler)
+            num_free_gpu = self.scheduler[0].block_manager.get_num_free_gpu_blocks()
             gpu_cache_usage_sys = 1.0 - (num_free_gpu / num_total_gpu)
 
         num_total_cpu = self.cache_config.num_cpu_blocks
         cpu_cache_usage_sys = 0.
         if num_total_cpu is not None and num_total_cpu > 0:
-            num_free_cpu = sum(
-                scheduler.block_manager.get_num_free_cpu_blocks()
-                for scheduler in self.scheduler)
+            num_free_cpu = self.scheduler[0].block_manager.get_num_free_cpu_blocks()
             cpu_cache_usage_sys = 1.0 - (num_free_cpu / num_total_cpu)
 
         # Prefix Cache Hit Rate. Note that we always use
@@ -1486,6 +1500,11 @@ class LLMEngine:
         best_of_requests: List[int] = []
         n_requests: List[int] = []
         finished_reason_requests: List[str] = []
+        actual_num_batched_tokens = None
+        model_execute_time_per_stage: List[float] = []
+        
+        if model_output:
+            model_execute_time_per_stage = model_output[0].model_execute_time_list
 
         # NOTE: This loop assumes prefill seq_groups are before
         # decode seq_groups in scheduled_seq_groups.
@@ -1601,6 +1620,8 @@ class LLMEngine:
             time_per_output_tokens_iter=time_per_output_tokens_iter,
             spec_decode_metrics=spec_decode_metrics,
             num_preemption_iter=num_preemption_iter,
+            actual_num_batched_tokens=actual_num_batched_tokens,
+            model_execute_time_per_stage=model_execute_time_per_stage,
 
             # Request stats
             #   Latency

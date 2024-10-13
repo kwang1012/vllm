@@ -110,22 +110,28 @@ launch_chunked_prefill() {
 
 launch_disagg_prefill() {
   # disagg prefill
-  VLLM_PORT=12345 VLLM_DISTRIBUTED_KV_ROLE=producer CUDA_VISIBLE_DEVICES=0,1 python3 \
+  VLLM_PORT=12345 VLLM_DISTRIBUTED_KV_ROLE=producer CUDA_VISIBLE_DEVICES=0,1 \
+  VLLM_LOGGING_FILENAME=./results/disagg/result-producer-1-2.log \
+  python3 \
     -m vllm.entrypoints.openai.api_server \
     --model $model \
     --port 8100 \
     -pp 2 \
     --max-model-len 4096 \
     --disable-log-stats \
-    --disable-log-requests &
-  VLLM_PORT=12345 VLLM_DISTRIBUTED_KV_ROLE=consumer CUDA_VISIBLE_DEVICES=2,3 python3 \
+    --disable-log-requests \
+    --gpu-memory-utilization 0.8 &
+  VLLM_PORT=12345 VLLM_DISTRIBUTED_KV_ROLE=consumer CUDA_VISIBLE_DEVICES=2,3 \
+  VLLM_LOGGING_FILENAME=./results/disagg/result-consumer-1-2.log \
+  python3 \
     -m vllm.entrypoints.openai.api_server \
     --model $model \
     --port 8200 \
     -pp 2 \
     --max-model-len 4096 \
     --disable-log-stats \
-    --disable-log-requests &
+    --disable-log-requests \
+    --gpu-memory-utilization 0.8 &
   wait_for_server 8100
   wait_for_server 8200
   python3 ../disagg_benchmarks/disagg_prefill_proxy_server.py &
@@ -188,16 +194,16 @@ main() {
   export VLLM_LOGGING_LEVEL=DEBUG
   export VLLM_HOST_IP=$(hostname -I | awk '{print $1}')
 
-  launch_profile
-  for qps in 2 4 6 8; do
-    benchmark $qps $default_output_len profile
-  done
+  # launch_profile
+  # for qps in 2 4 6 8; do
+  #   benchmark $qps $default_output_len profile
+  # done
 
-  launch_chunked_profile
-  for qps in 2 4 6 8; do
-    benchmark $qps $default_output_len chunked_profile
-  done
-  kill_gpu_processes
+  # launch_chunked_profile
+  # for qps in 2 4 6 8; do
+  #   benchmark $qps $default_output_len chunked_profile
+  # done
+  # kill_gpu_processes
 
   # launch_normal_prefill
   # for qps in 2 4 6 8; do
@@ -211,11 +217,11 @@ main() {
   # done
   # kill_gpu_processes
 
-  # launch_disagg_prefill
-  # for qps in 2 4 6 8; do
-  #   benchmark $qps $default_output_len disagg_prefill
-  # done
-  # kill_gpu_processes
+  launch_disagg_prefill
+  for qps in 4 6 8; do
+    benchmark $qps $default_output_len disagg_prefill
+  done
+  kill_gpu_processes
 
   python3 visualize.py
 

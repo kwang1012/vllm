@@ -73,8 +73,10 @@ class TorchDistributedPipe(KVPipeBase):
                 self.rank_in_group = ranks.index(self.rank)
                 self.device_group = device_group
 
-        assert self.device_group is not None
-        assert self.rank_in_group <= 1
+        if self.device_group is None:
+            return
+        # assert self.device_group is not None
+        # assert self.rank_in_group <= 1
 
         self.device = self._select_device(torch_distributed_backend)
 
@@ -242,7 +244,7 @@ class TorchDistributedPipe(KVPipeBase):
         Sends a tensor to the destination rank in a non-blocking way.
         Flow: send tensor dim -- send tensor shape -- send tensor data
         """
-
+        
         if self.transport_thread is None:
             self.transport_thread = ThreadPoolExecutor(max_workers=1)
 

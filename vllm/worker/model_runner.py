@@ -516,7 +516,7 @@ class ModelInputForGPUBuilder(ModelRunnerInputBuilderBase[ModelInputForGPU]):
                     seq_data.mrope_position_delta,
                     context_len,
                     seq_len,
-                )
+            )
 
     def _compute_for_prefix_cache_hit(
             self, inter_data: InterDataForSeqGroup, seq_idx: int,
@@ -1420,7 +1420,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         intermediate_inputs[:batch_size]
                         if intermediate_inputs is not None else None,
                         "kv_caches":
-                        kv_caches[virtual_engine],
+                        kv_caches,
                         "attn_metadata":
                         attn_metadata,
                         "memory_pool":
@@ -1708,6 +1708,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             1. current vLLM instance is KV cache *consumer*
             2. this batch is not a profiling run
             3. this batch is a prefill run
+            4. is pp first stage
         """
 
         prefill_meta = model_input.attn_metadata.prefill_metadata
@@ -1717,10 +1718,13 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         # check if the current run is prefill
         is_prefill_run = prefill_meta is not None
 
+        is_last_stage = get_pp_group().is_last_rank
+
         return all([
             dist_kv.IS_KV_CONSUMER,
             not is_profile_run,
             is_prefill_run,
+            is_last_stage,
         ])
 
     def send_kv_needed(self, model_input, kv_caches) -> bool:
@@ -1729,6 +1733,7 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
             1. current vLLM instance is KV cache *producer*
             2. this batch is not a profiling run
             3. this batch is a prefill run
+            4. if pp, is last stage
         """
 
         prefill_meta = model_input.attn_metadata.prefill_metadata
@@ -1738,8 +1743,10 @@ class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
         # check if the current run is prefill
         is_prefill_run = prefill_meta is not None
 
+        is_last_stage = get_pp_group().is_last_rank
+
         return all(
-            [dist_kv.IS_KV_PRODUCER, not is_profile_run, is_prefill_run])
+            [dist_kv.IS_KV_PRODUCER, not is_profile_run, is_prefill_run, is_last_stage])
 
 
 class CUDAGraphRunner:
@@ -1871,7 +1878,7 @@ class CUDAGraphRunner:
 
         if intermediate_tensors is not None:
             for key in intermediate_tensors.tensors:
-                if key != "model_execute_time" and key != "model_forward_time":
+                if key not in ("model_execute_time", "model_forward_time", "model_execute_time_list", "model_send_time_list", "model_recv_time_list"):
                     self.input_buffers[key].copy_(intermediate_tensors[key],
                                                   non_blocking=True)
         if self._is_encoder_decoder_model:

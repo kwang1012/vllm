@@ -68,7 +68,6 @@ async def main():
         generated_text = output.outputs[0].text
         # print(f"Prompt: {prompt!r}, Generated text: {generated_text!r}")
     # print(json.dumps(stats_per_request_finished))
-    # print(BLOCK_SIZE_LIST)
 
 if __name__ == "__main__":
     asyncio.run(main())

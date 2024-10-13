@@ -63,7 +63,7 @@ if TYPE_CHECKING:
     VLLM_USE_TRITON_AWQ: bool = False
     VLLM_ALLOW_RUNTIME_LORA_UPDATING: bool = False
     VLLM_ALLOW_DEPRECATED_BEAM_SEARCH: bool = False
-    VLLM_LOGGING_FILENAME: str = "results.log"
+    VLLM_LOGGING_FILENAME: Optional[str] = None
 
 
 def get_default_cache_root():
@@ -430,7 +430,7 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     (os.environ.get("VLLM_ALLOW_RUNTIME_LORA_UPDATING", "0").strip().lower() in
      ("1", "true")),
     "VLLM_LOGGING_FILENAME":
-    lambda: os.getenv("VLLM_LOGGING_FILENAME", "results.log"),
+    lambda: os.getenv("VLLM_LOGGING_FILENAME", None),
 }
 
 # end-env-vars-definition
