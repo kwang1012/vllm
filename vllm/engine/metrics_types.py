@@ -43,7 +43,8 @@ class Stats:
     time_per_output_tokens_iter: List[float]
     num_preemption_iter: int
     actual_num_batched_tokens: int
-    model_execute_time_per_stage: List[float]
+    stage_info: List[dict]
+    latency: float
 
     # Request stats (should have _requests suffix)
     #   Latency

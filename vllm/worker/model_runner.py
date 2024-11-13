@@ -1878,7 +1878,7 @@ class CUDAGraphRunner:
 
         if intermediate_tensors is not None:
             for key in intermediate_tensors.tensors:
-                if key not in ("model_execute_time", "model_forward_time", "model_execute_time_list", "model_send_time_list", "model_recv_time_list"):
+                if key not in ("model_execute_time", "model_forward_time"):
                     self.input_buffers[key].copy_(intermediate_tensors[key],
                                                   non_blocking=True)
         if self._is_encoder_decoder_model:

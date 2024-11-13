@@ -1501,10 +1501,12 @@ class LLMEngine:
         n_requests: List[int] = []
         finished_reason_requests: List[str] = []
         actual_num_batched_tokens = None
-        model_execute_time_per_stage: List[float] = []
+        stage_info: List[dict] = []
+        latency = None
         
         if model_output:
-            model_execute_time_per_stage = model_output[0].model_execute_time_list
+            stage_info = model_output[0].stage_info
+            latency = model_output[0].latency
 
         # NOTE: This loop assumes prefill seq_groups are before
         # decode seq_groups in scheduled_seq_groups.
@@ -1621,7 +1623,8 @@ class LLMEngine:
             spec_decode_metrics=spec_decode_metrics,
             num_preemption_iter=num_preemption_iter,
             actual_num_batched_tokens=actual_num_batched_tokens,
-            model_execute_time_per_stage=model_execute_time_per_stage,
+            stage_info=stage_info,
+            latency=latency,
 
             # Request stats
             #   Latency

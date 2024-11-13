@@ -1,6 +1,7 @@
 import asyncio
 import os
 from functools import partial
+import time
 from typing import Any, List, Optional
 
 import torch
@@ -203,6 +204,17 @@ class MultiprocessingGPUExecutor(DistributedGPUExecutor):
             result.get()
 
 
+async def _task(pp_rank, fn, lock, input_queue: asyncio.Queue, output_queue, terminate_flag: asyncio.Event):
+    print(fn)
+    while not terminate_flag.is_set():
+        execute_model_req = await input_queue.get()
+        if pp_rank == 0:
+            result = await _run_task_with_lock(fn, lock, execute_model_req)
+        else:
+            result = await _run_task_with_lock(fn, lock, "execute_model", execute_model_req)
+        await output_queue.put(result)
+
+
 class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
                                       DistributedGPUExecutorAsync):
 
@@ -210,13 +222,27 @@ class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
         super().__init__(*args, **kwargs)
         self.driver_exec_model = make_async(self.driver_worker.execute_model)
         self.pp_locks: Optional[List[asyncio.Lock]] = None
+        self.input_queues = [asyncio.Queue(1000) for _ in range(
+            self.parallel_config.pipeline_parallel_size)]
+        self.output_queues = [asyncio.Queue(1000) for _ in range(
+            self.parallel_config.pipeline_parallel_size)]
+        self.terminate_flag = asyncio.Event()
+
+    async def stop_remote_worker_execution_loop_async(self) -> None:
+        print("stop_remote_worker_execution_loop_async")
+        # self.terminate_flag.set()
+        await super().stop_remote_worker_execution_loop_async()
 
     async def _driver_execute_model_async(
         self,
         execute_model_req: Optional[ExecuteModelRequest] = None
     ) -> List[SamplerOutput]:
         if not self.tp_driver_workers:
-            return await self.driver_exec_model(execute_model_req)
+            output, info = await self.driver_exec_model(execute_model_req)
+            for o in output:
+                o.stage_info = [info]
+                o.latency = 0
+            return output
 
         if self.pp_locks is None:
             # This locks each pipeline parallel stage so multiple virtual
@@ -227,23 +253,42 @@ class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
                 asyncio.Lock()
                 for _ in range(self.parallel_config.pipeline_parallel_size)
             ]
+            
+            self.task_pools = [
+                asyncio.create_task(_task(0, self.driver_exec_model, self.pp_locks[0], self.input_queues[0], self.output_queues[0], self.terminate_flag))
+            ]
+            for pp_rank, driver_worker in enumerate(self.tp_driver_workers,
+                                                    start=1):
+                self.task_pools.append(asyncio.create_task(_task(pp_rank, driver_worker.execute_method_async, self.pp_locks[pp_rank], self.input_queues[pp_rank], self.output_queues[pp_rank], self.terminate_flag)))
 
-        tasks = [
-            asyncio.create_task(
-                _run_task_with_lock(self.driver_exec_model, self.pp_locks[0],
-                                    execute_model_req))
-        ]
-        for pp_rank, driver_worker in enumerate(self.tp_driver_workers,
-                                                start=1):
-            tasks.append(
-                asyncio.create_task(
-                    _run_task_with_lock(driver_worker.execute_method_async,
-                                        self.pp_locks[pp_rank],
-                                        "execute_model", execute_model_req)))
-        results = await asyncio.gather(*tasks)
+        start_time = time.time()
+        for i in range(self.parallel_config.pipeline_parallel_size):
+            self.input_queues[i].put_nowait(execute_model_req)
+        # tasks = [
+        #     asyncio.create_task(
+        #         _run_task_with_lock(self.driver_exec_model, self.pp_locks[0],
+        #                             execute_model_req))
+        # ]
+        # for pp_rank, driver_worker in enumerate(self.tp_driver_workers,
+        #                                         start=1):
+        #     tasks.append(
+        #         asyncio.create_task(
+        #             _run_task_with_lock(driver_worker.execute_method_async,
+        #                                 self.pp_locks[pp_rank],
+        #                                 "execute_model", execute_model_req)))
+        # results = await asyncio.gather(*tasks)
+        results = []
+        for i in range(self.parallel_config.pipeline_parallel_size):
+            results.append(await self.output_queues[i].get())
+        
+        start_time = time.time() - start_time
+        output = results[-1][0]
 
+        for o in output:
+            o.stage_info = [r[1] for r in results]
+            o.latency = start_time
         # Only the last PP stage has the final results.
-        return results[-1]
+        return output
 
     async def _start_worker_execution_loop(self):
         coros = [

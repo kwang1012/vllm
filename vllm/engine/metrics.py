@@ -1,3 +1,4 @@
+import json
 from typing import TYPE_CHECKING
 from typing import Counter as CollectionsCounter
 from typing import Dict, List, Optional, Union
@@ -364,7 +365,8 @@ class LoggingStatLogger(StatLoggerBase):
                 "Time per output tokens: %f, "
                 "GPU utilization: %d, "
                 "Batch size: %d, "
-                "Stage time: %s.",
+                "Latency: %f, "
+                "Stage info: %s.",
                 virtual_engine,
                 prompt_throughput,
                 generation_throughput,
@@ -379,7 +381,8 @@ class LoggingStatLogger(StatLoggerBase):
                     stats.time_per_output_tokens_iter) > 0 else 0,
                 torch.cuda.utilization(),
                 stats.actual_num_batched_tokens,
-                " ".join(str(t) for t in stats.model_execute_time_per_stage),
+                stats.latency,
+                ">".join(json.dumps(t).replace(":", ";").replace(",", "*") for t in stats.stage_info),
             )
             if (stats.cpu_prefix_cache_hit_rate >= 0
                     or stats.gpu_prefix_cache_hit_rate >= 0):

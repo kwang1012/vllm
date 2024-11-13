@@ -1072,9 +1072,7 @@ class RowParallelLinear(LinearBase):
                                                   input_parallel,
                                                   bias=bias_)
         if self.reduce_results and self.tp_size > 1:
-            start = time.time()
             output = tensor_model_parallel_all_reduce(output_parallel)
-            print("Reduce time:", time.time() - start)
         else:
             output = output_parallel
 

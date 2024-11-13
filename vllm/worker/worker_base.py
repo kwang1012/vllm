@@ -291,9 +291,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 return None
             return self._get_driver_input_and_broadcast(execute_model_req)
         else:
-            start = time.time()
             worker_input = self._get_worker_input_from_broadcast()
-            print("Prepare input time:", time.time() - start)
             return worker_input
 
     def execute_model(
@@ -302,7 +300,6 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
-        start_time = time.perf_counter()
 
         inputs = self.prepare_input(execute_model_req)
         if inputs is None:
@@ -319,22 +316,22 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         intermediate_tensors = None
         orig_model_execute_time = 0.0
-        orig_model_execute_time_list: torch.Tensor | None = None
+        recv_timestamp = None
+        model_recv_time = None
         if not get_pp_group().is_first_rank:
-            start = time.time()
+            recv_timestamp = start = time.time()
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict(all_gather_group=get_tp_group()))
             model_recv_time = time.time() - start
-            
-            logger.debug("Virtual engine: %s, Recv time: %s", execute_model_req.virtual_engine, model_recv_time)
-            
-            orig_model_execute_time_list = intermediate_tensors.tensors.get("model_execute_time_list")
             
             if (self.observability_config is not None
                     and self.observability_config.collect_model_execute_time):
                 orig_model_execute_time = intermediate_tensors.tensors.get(
                     "model_execute_time", torch.tensor(0)).item()
 
+        torch.cuda.synchronize()
+        model_exec_timestamp = time.time()
+        start_time = time.perf_counter()
         output = self.model_runner.execute_model(
             model_input=model_input,
             kv_caches=self.kv_cache
@@ -343,6 +340,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             num_steps=num_steps,
             **kwargs,
         )
+        torch.cuda.synchronize()
 
         model_execute_time = time.perf_counter() - start_time
         if not get_pp_group().is_last_rank:
@@ -351,35 +349,36 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     and self.observability_config.collect_model_execute_time):
                 output.tensors["model_execute_time"] = torch.tensor(
                     model_execute_time + orig_model_execute_time)
-            if orig_model_execute_time_list is None:
-                output.tensors["model_execute_time_list"] = torch.Tensor([model_execute_time])
-            else:
-                output.tensors["model_execute_time_list"] = torch.cat((orig_model_execute_time_list, torch.Tensor([model_execute_time])))
             
-            start = time.time()
+            send_timestamp = time.time()
             get_pp_group().send_tensor_dict(output.tensors,
                                             all_gather_group=get_tp_group())
-            model_send_time = time.time() - start
-            logger.debug("Virtual engine: %s, Send time: %s", execute_model_req.virtual_engine, model_send_time)
+            model_send_time = time.time() - send_timestamp
             
-            return [None]
+            return [None], {
+                "send_time": model_send_time,
+                "recv_time": model_recv_time,
+                "exec_time": model_execute_time,
+                "send_timestamp": send_timestamp,
+                "recv_timestamp": recv_timestamp,
+                "exec_timestamp": model_exec_timestamp,
+                }
         if (self.observability_config is not None
                 and self.observability_config.collect_model_execute_time
                 and output is not None):
             for o in output:
                 o.model_execute_time = (orig_model_execute_time +
                                         model_execute_time)
-        
-        if orig_model_execute_time_list is None:
-            model_execute_time_list = [model_execute_time]
-        else:
-            model_execute_time_list = torch.cat((orig_model_execute_time_list, torch.Tensor([model_execute_time]))).tolist()
-        
-        for o in output:
-            o.model_execute_time_list = model_execute_time_list
 
         # output is List[SamplerOutput]
-        return output
+        return output, {
+            "send_time": None,
+            "recv_time": model_recv_time,
+            "exec_time": model_execute_time,
+            "send_timestamp": None,
+            "recv_timestamp": recv_timestamp,
+            "exec_timestamp": model_exec_timestamp,
+        }
 
     def _execute_model_spmd(
         self,

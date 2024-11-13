@@ -117,7 +117,9 @@ class SamplerOutput(
     # block/sync across workers, cpu-gpu sync time and sampling time.
     model_execute_time: Optional[float] = None
     
-    model_execute_time_list: list[float] = []
+    stage_info: list[dict] = []
+    
+    latency: Optional[float] = None
 
     def __getitem__(self, idx: int):
         return self.outputs[idx]

@@ -242,7 +242,6 @@ class GroupCoordinator:
         if use_message_queue_broadcaster and self.world_size > 1:
             self.mq_broadcaster = MessageQueue.create_from_process_group(
                 self.cpu_group, 1 << 22, 6)
-        self.send_lock = asyncio.Lock()
 
     @property
     def first_rank(self):
@@ -674,7 +673,6 @@ class GroupCoordinator:
         if not torch.distributed.is_initialized() or self.world_size == 1:
             return tensor_dict
 
-        # async with self.send_lock:
         all_gather_size = (1 if all_gather_group is None else
                         all_gather_group.world_size)
         all_gather_rank = (0 if all_gather_group is None else
@@ -697,6 +695,7 @@ class GroupCoordinator:
         # `send_object_list` has serialization & deserialization,
         # all happening on CPU. Therefore, we can use the CPU group.
         self.send_object(metadata_list, dst=dst)
+        
         for tensor in tensor_list:
             if tensor.numel() == 0:
                 # Skip sending empty tensors.
