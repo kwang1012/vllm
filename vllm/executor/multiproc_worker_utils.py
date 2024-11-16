@@ -3,6 +3,7 @@ import multiprocessing
 import os
 import sys
 import threading
+import time
 import uuid
 from dataclasses import dataclass
 from multiprocessing import Queue
@@ -160,11 +161,11 @@ class ProcessWorkerWrapper:
         self.process.start()
 
     def _enqueue_task(self, future: Union[ResultFuture, asyncio.Future],
-                      method: str, args, kwargs):
+                      method: str, args, kwargs, put_time=None):
         task_id = uuid.uuid4()
         self.tasks[task_id] = future
         try:
-            self._task_queue.put((task_id, method, args, kwargs))
+            self._task_queue.put((task_id, method, args, kwargs, put_time))
         except SystemExit:
             raise
         except BaseException as e:
@@ -173,12 +174,12 @@ class ProcessWorkerWrapper:
 
     def execute_method(self, method: str, *args, **kwargs):
         future: ResultFuture = ResultFuture()
-        self._enqueue_task(future, method, args, kwargs)
+        self._enqueue_task(future, method, args, kwargs, put_time=time.time())
         return future
 
     async def execute_method_async(self, method: str, *args, **kwargs):
         future = asyncio.get_running_loop().create_future()
-        self._enqueue_task(future, method, args, kwargs)
+        self._enqueue_task(future, method, args, kwargs, put_time=time.time())
         return await future
 
     def terminate_worker(self):
@@ -217,10 +218,13 @@ def _run_worker_process(
         for items in iter(task_queue.get, _TERMINATE):
             output = None
             exception = None
-            task_id, method, args, kwargs = items
+            task_id, method, args, kwargs, put_time = items
             try:
+                start_time = time.time()
+                # print(method, "time diff", start_time - put_time)
                 executor = getattr(worker, method)
                 output = executor(*args, **kwargs)
+                # print(method, "execution time:", time.time() - start_time)
             except SystemExit:
                 raise
             except KeyboardInterrupt:

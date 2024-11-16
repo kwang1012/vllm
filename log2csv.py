@@ -53,12 +53,12 @@ def main(filename):
             result["tpot"] = tpot
             result["batch_size"] = batch_size
             result_dict.append(result)
-            batch_sizes.append(batch_size)
             if generation_throughput != 0:
                 throughputs.append(generation_throughput)
                 tokens.append(generation_throughput * tpot)
             if tpot != 0:
                 latencies.append(tpot)
+                batch_sizes.append(batch_size)
         elif "schedule prefills" in line or "schedule recomputes" in line:
             result = {}
             time_str = line.split(" ")[2]
@@ -112,7 +112,6 @@ def main(filename):
     overall_throughput = sum(tokens) / e2e_latency.total_seconds()
     avg_batch_size = sum(batch_sizes) / len(batch_sizes)
     print("Average batch size:", avg_batch_size)
-    print("Average stage times:", )
     print("Overall throughput:", overall_throughput)
     print("Average TPOT:", avg_latency)
     print(f"Total evictions: {num_eviction}, Evicted output tokens: {num_preempted_tokens}")
