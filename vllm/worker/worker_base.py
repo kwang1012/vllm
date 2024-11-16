@@ -262,6 +262,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     is_driver_worker: bool
     model_runner: ModelRunnerBase
     observability_config: Optional[ObservabilityConfig] = None
+    pp_lock = None
 
     @property
     @abstractmethod
@@ -384,6 +385,11 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
 
+        # with self.pp_lock:
+        if get_pp_group().rank_in_group == 0:
+            logger.info("Start execute model virtual engine: %s", execute_model_req.virtual_engine)
+
+        exec_start_time = time.time()
         inputs = self.prepare_input(execute_model_req)
         if inputs is None:
             return None
@@ -435,11 +441,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     model_execute_time + orig_model_execute_time)
             
             send_timestamp = time.time()
-            get_pp_group().send_tensor_dict(output.tensors,
-                                            all_gather_group=get_tp_group())
+            get_pp_group().send_tensor_dict(output.tensors, all_gather_group=get_tp_group())
             model_send_time = time.time() - send_timestamp
             
+            if get_pp_group().rank_in_group == 0:
+                logger.info("Finish execute model virtual engine: %s", execute_model_req.virtual_engine)
             return [None], {
+                "start_timestamp": exec_start_time,
+                "end_timestamp": None,
                 "send_time": model_send_time,
                 "recv_time": model_recv_time,
                 "exec_time": model_execute_time,
@@ -453,9 +462,13 @@ class LocalOrDistributedWorkerBase(WorkerBase):
             for o in output:
                 o.model_execute_time = (orig_model_execute_time +
                                         model_execute_time)
-
+        exec_end_time = time.time()
         # output is List[SamplerOutput]
+        if get_pp_group().rank_in_group == 0:
+            logger.info("Finish execute model virtual engine: %s", execute_model_req.virtual_engine)
         return output, {
+            "start_timestamp": exec_start_time,
+            "end_timestamp": exec_end_time,
             "send_time": None,
             "recv_time": model_recv_time,
             "exec_time": model_execute_time,

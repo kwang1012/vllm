@@ -1642,11 +1642,11 @@ class LLMEngine:
         finished_reason_requests: List[str] = []
         actual_num_batched_tokens = None
         stage_info: List[dict] = []
-        latency = None
+        exec_latency = None
         
         if model_output:
             stage_info = model_output[0].stage_info
-            latency = model_output[0].latency
+            exec_latency = model_output[0].latency
 
         # Lora requests
         running_lora_adapters = dict(
@@ -1818,7 +1818,7 @@ class LLMEngine:
             num_preemption_iter=num_preemption_iter,
             actual_num_batched_tokens=actual_num_batched_tokens,
             stage_info=stage_info,
-            latency=latency,
+            latency=exec_latency,
 
             # Request stats
             #   Latency
