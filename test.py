@@ -6,6 +6,8 @@ async def run_with_lock(fn, lock):
         await fn()
 
 async def foo():
+    for _ in range(100):
+        time.sleep(0.0001)
     return
 
 async def task(fn, lock, input_queue, output_queue, terminate_flag: asyncio.Event):

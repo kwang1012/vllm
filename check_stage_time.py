@@ -7,13 +7,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 def get_latency_from_stage_info(stage_info):
-    sum = 0
-    for i, info in enumerate(stage_info):
-        sum += info["exec_time"]
+    return stage_info[-1]["end_timestamp"] - stage_info[0]["start_timestamp"]
+    # sum = 0
+    # for i, info in enumerate(stage_info):
+    #     sum += info["exec_time"]
         
-        if i != 0:
-            sum += info["exec_timestamp"] - stage_info[i-1]["send_timestamp"]
-    return sum
+    #     if i != 0:
+    #         sum += info["exec_timestamp"] - stage_info[i-1]["send_timestamp"]
+    # return sum
 
 def main(filename):
     with open(f"{filename}.log", "r", encoding="utf-8") as f:
@@ -48,8 +49,8 @@ def main(filename):
     actual_send_times = [sum(i["send_time"] for i in info if i["send_time"]) for info in infos]
     actual_recv_times = [sum(i["recv_time"] for i in info if i["recv_time"]) for info in infos]
     print("Average TPOT:", sum(tpots) / len(tpots))
-    print("Average Latency:", sum(latencies) / len(latencies))
     print("Average Actual Latency:", sum(actual_latencies) / len(actual_latencies))
+    print("Average Multiproc Latency:", sum(latencies) / len(latencies))
     print("Average Send Time:", sum(actual_send_times) / len(actual_send_times))
     print("Average Recv Time:", sum(actual_recv_times) / len(actual_recv_times))
     

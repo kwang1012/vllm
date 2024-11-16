@@ -1,6 +1,7 @@
 """A GPU worker class."""
 import asyncio
 import gc
+import multiprocessing
 import os
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
 
@@ -59,6 +60,7 @@ class Worker(LocalOrDistributedWorkerBase):
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
         observability_config: Optional[ObservabilityConfig] = None,
     ) -> None:
+        self.pp_lock = multiprocessing.Lock()
         self.model_config = model_config
         self.parallel_config = parallel_config
         self.parallel_config.rank = rank
@@ -329,7 +331,6 @@ class Worker(LocalOrDistributedWorkerBase):
 
     @torch.inference_mode()
     def execute_worker(self, worker_input: WorkerInput) -> None:
-        virtual_engine = worker_input.virtual_engine
         # Issue cache operations.
         if (worker_input.blocks_to_swap_in is not None
                 and worker_input.blocks_to_swap_in.numel() > 0):

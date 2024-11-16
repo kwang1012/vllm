@@ -23,6 +23,8 @@ If you only need to use the distributed environment without model/pipeline
 import asyncio
 import contextlib
 import pickle
+import queue
+import threading
 import time
 import weakref
 from collections import namedtuple
@@ -748,7 +750,7 @@ class GroupCoordinator:
             if isinstance(value, TensorMetadata):
                 tensor = torch.empty(value.size,
                                      dtype=value.dtype,
-                                     device=value.device)
+                                     device=self.device)
                 if tensor.numel() == 0:
                     # Skip broadcasting empty tensors.
                     tensor_dict[key] = tensor
@@ -836,6 +838,110 @@ class GroupCoordinator:
         if self.mq_broadcaster is not None:
             self.mq_broadcaster = None
 
+class AsyncGroupCoordinator(GroupCoordinator):
+
+    def __init__(
+        self,
+        group_ranks: List[List[int]],
+        local_rank: int,
+        torch_distributed_backend: Union[str, Backend],
+        use_pynccl: bool,
+        use_custom_allreduce: bool,
+        use_tpu_communicator: bool,
+        use_message_queue_broadcaster: bool = False,
+        group_name: Optional[str] = None,
+    ):
+        super().__init__(group_ranks, local_rank, torch_distributed_backend,
+                            use_pynccl, use_custom_allreduce, use_tpu_communicator,
+                            use_message_queue_broadcaster, group_name)
+        
+        self._send_count = 0
+        
+        self._send_buffer = queue.Queue()
+        self._recv_buffer = queue.Queue()
+        self.rcv_signal_buffer = torch.empty(1, dtype=torch.long, device="cpu")
+        
+        self.request_handling_thread = None
+        self.request_sending_thread = None
+        
+        if not self.is_first_rank:
+            self.request_handling_thread = threading.Thread(
+                target=self.handle_request_worker,
+            )
+            self.request_handling_thread.start()
+        if not self.is_last_rank:
+            self.request_sending_thread = threading.Thread(
+                target=self.send_request_worker,
+            )
+            self.request_sending_thread.start()
+    
+    
+    def recv_signal(self, src: Optional[int] = None):
+        if src is None:
+            src = (self.rank_in_group - 1) % self.world_size
+        assert src < self.world_size, f"Invalid src rank ({src})"
+        
+        torch.distributed.recv(
+            self.rcv_signal_buffer,
+            src=src,
+            group=self.cpu_group,
+        )
+        
+        return self.rcv_signal_buffer.item()
+
+
+    def send_signal(self, dst: Optional[int] = None, signal: Optional[int] = None):
+        if dst is None:
+            dst = (self.rank_in_group + 1) % self.world_size
+            
+        assert dst != self.rank_in_group, (
+            "Invalid destination rank. Destination rank is the same "
+            "as the current rank.")
+        signal = signal or self._send_count
+        
+        send_buf = torch.tensor([self._send_count], dtype=torch.long, device="cpu")
+        
+        torch.distributed.send(
+            send_buf,
+            dst=dst,
+            group=self.cpu_group,
+        )
+        self._send_count += 1
+        
+    def recv_tensor_dict_async(self,
+        src: Optional[int] = None,
+        all_gather_group: Optional["GroupCoordinator"] = None,):
+        tensor_dict = self._recv_buffer.get()
+        return tensor_dict
+
+    def send_tensor_dict_async(self,
+        tensor_dict: Dict[str, Union[torch.Tensor, Any]]):
+        self._send_buffer.put(tensor_dict)
+    
+    def handle_request_worker(self):
+        while True:
+            signal = self.recv_signal()
+            if signal == -1:
+                return
+            tensor_dict = self.recv_tensor_dict(all_gather_group=get_tp_group())
+            self._recv_buffer.put(tensor_dict)
+
+    def send_request_worker(self):
+        while True:
+            tensor_dict = self._send_buffer.get()
+            if tensor_dict is None:
+                self.send_signal(signal=-1)
+                return
+            self.send_signal()
+            self.send_tensor_dict(tensor_dict, all_gather_group=get_tp_group())
+
+    def destroy(self):
+        super().destroy()
+        self._send_buffer.put(None)
+        if self.request_handling_thread is not None:
+            self.request_handling_thread.join()
+        if self.request_sending_thread is not None:
+            self.request_sending_thread.join()
 
 _WORLD: Optional[GroupCoordinator] = None
 
@@ -865,9 +971,21 @@ def init_model_parallel_group(
     use_custom_allreduce: Optional[bool] = None,
     use_message_queue_broadcaster: bool = False,
     group_name: Optional[str] = None,
+    asynchronous: bool = False,
 ) -> GroupCoordinator:
     if use_custom_allreduce is None:
         use_custom_allreduce = _ENABLE_CUSTOM_ALL_REDUCE
+    if asynchronous:
+        return AsyncGroupCoordinator(
+            group_ranks=group_ranks,
+            local_rank=local_rank,
+            torch_distributed_backend=backend,
+            use_pynccl=True,
+            use_custom_allreduce=use_custom_allreduce,
+            use_tpu_communicator=True,
+            use_message_queue_broadcaster=use_message_queue_broadcaster,
+            group_name=group_name,
+        )
     return GroupCoordinator(
         group_ranks=group_ranks,
         local_rank=local_rank,
@@ -894,7 +1012,7 @@ get_tensor_model_parallel_group = get_tp_group
 _PP: Optional[GroupCoordinator] = None
 
 
-def get_pp_group() -> GroupCoordinator:
+def get_pp_group() -> AsyncGroupCoordinator:
     assert _PP is not None, (
         "pipeline model parallel group is not initialized")
     return _PP
