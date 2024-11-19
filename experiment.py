@@ -4,6 +4,7 @@ import asyncio
 from tqdm import tqdm
 
 from vllm import SamplingParams
+from vllm.distributed.parallel_state import destroy_model_parallel
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.utils import FlexibleArgumentParser, random_uuid
@@ -49,6 +50,7 @@ async def main(args):
         generated_text = output.outputs[0].text
         avg_generated_text_len.append(len(generated_text))
 
+    destroy_model_parallel()
     print("Average generated text length:", sum(avg_generated_text_len) / len(avg_generated_text_len))
 
 if __name__ == "__main__":

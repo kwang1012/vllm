@@ -54,7 +54,6 @@ class Worker(LocalOrDistributedWorkerBase):
         model_runner_cls: Optional[Type[GPUModelRunnerBase]] = None,
     ) -> None:
         WorkerBase.__init__(self, vllm_config)
-        self.pp_lock = multiprocessing.Lock()
         self.parallel_config.rank = rank
         self.local_rank = local_rank
         self.rank = rank
@@ -313,19 +312,24 @@ class Worker(LocalOrDistributedWorkerBase):
 
     def _init_cache_engine(self):
         assert self.cache_config.num_gpu_blocks is not None
-        self.cache_engine = CacheEngine(self.cache_config, self.model_config,
-                        self.parallel_config, self.device_config)
-        # self.cache_engine = [
-        #     CacheEngine(self.cache_config, self.model_config,
-        #                 self.parallel_config, self.device_config)
-        #     for _ in range(self.parallel_config.pipeline_parallel_size)
-        # ]
         
-        self.gpu_cache = self.cache_engine.gpu_cache
-        # self.gpu_cache = [
-        #     self.cache_engine[ve].gpu_cache
-        #     for ve in range(self.parallel_config.pipeline_parallel_size)
-        # ]
+        if self.cache_config.strict_mem_boundary:
+            self.cache_engine = [
+                CacheEngine(self.cache_config, self.model_config,
+                            self.parallel_config, self.device_config)
+                for _ in range(self.parallel_config.pipeline_parallel_size)
+            ]
+        else:
+            cache_engine = CacheEngine(self.cache_config, self.model_config,
+                            self.parallel_config, self.device_config)
+            self.cache_engine = [
+                cache_engine
+                for _ in range(self.parallel_config.pipeline_parallel_size)
+            ]
+        self.gpu_cache = [
+            self.cache_engine[ve].gpu_cache
+            for ve in range(self.parallel_config.pipeline_parallel_size)
+        ]
         bind_kv_cache(self.compilation_config.static_forward_context,
                       self.gpu_cache)
 

@@ -342,22 +342,23 @@ class LLMEngine:
         # of request outputs to asyncio queues
         self.process_request_outputs_callback: Optional[Callable] = None
 
-        version = "v1"
-        if self.scheduler_config.use_v2_block_manager:
-            version = "v2"
-        if self.scheduler_config.embedding_mode:
-            version = "embedding"
+        block_manager = None
+        if not cache_config.strict_mem_boundary:
+            version = "selfattn"
+            if (self.scheduler_config.task == "embedding"
+                    or self.cache_config.is_attention_free):
+                version = "placeholder"
+                
+            BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
+                version)
             
-        BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
-            version)
-        
-        block_manager = BlockSpaceManagerImpl(
-            block_size=self.cache_config.block_size,
-            num_gpu_blocks=self.cache_config.num_gpu_blocks,
-            num_cpu_blocks=self.cache_config.num_cpu_blocks,
-            sliding_window=self.cache_config.sliding_window,
-            enable_caching=self.cache_config.enable_prefix_caching)
-        
+            block_manager = BlockSpaceManagerImpl(
+                block_size=self.cache_config.block_size,
+                num_gpu_blocks=self.cache_config.num_gpu_blocks,
+                num_cpu_blocks=self.cache_config.num_cpu_blocks,
+                sliding_window=self.cache_config.sliding_window,
+                enable_caching=self.cache_config.enable_prefix_caching)
+            
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
@@ -367,7 +368,8 @@ class LLMEngine:
                 block_manager,
                 self.parallel_config.pipeline_parallel_size,
                 self.async_callbacks[v_id]
-                if self.model_config.use_async_output_proc else None)
+                if self.model_config.use_async_output_proc else None,
+                v_id)
             for v_id in range(self.parallel_config.pipeline_parallel_size)
         ]
 
@@ -420,6 +422,7 @@ class LLMEngine:
             ))
 
         self.seq_id_to_seq_group: Dict[str, SequenceGroupBase] = {}
+        self.last_log_time = None
 
     def _initialize_kv_caches(self) -> None:
         """Initialize the KV cache in the worker(s).
@@ -1580,6 +1583,7 @@ class LLMEngine:
                 sequences will be ignored.
         """
         now = time.time()
+        
 
         # System State
         #   Scheduler State
@@ -1594,17 +1598,23 @@ class LLMEngine:
         num_total_gpu = self.cache_config.num_gpu_blocks
         gpu_cache_usage_sys = 0.
         if num_total_gpu:  # Guard against both None and 0
-            num_free_gpu = sum(
-                scheduler.block_manager.get_num_free_gpu_blocks()
-                for scheduler in self.scheduler)
+            if self.cache_config.strict_mem_boundary:
+                num_free_gpu = sum(
+                    scheduler.block_manager.get_num_free_gpu_blocks()
+                    for scheduler in self.scheduler)
+            else:
+                num_free_gpu = self.scheduler[0].block_manager.get_num_free_gpu_blocks()
             gpu_cache_usage_sys = 1.0 - (num_free_gpu / num_total_gpu)
 
         num_total_cpu = self.cache_config.num_cpu_blocks
         cpu_cache_usage_sys = 0.
         if num_total_cpu:  # Guard against both None and 0
-            num_free_cpu = sum(
-                scheduler.block_manager.get_num_free_cpu_blocks()
-                for scheduler in self.scheduler)
+            if self.cache_config.strict_mem_boundary:
+                num_free_cpu = sum(
+                    scheduler.block_manager.get_num_free_cpu_blocks()
+                    for scheduler in self.scheduler)
+            else:
+                num_free_cpu = self.scheduler[0].block_manager.get_num_free_cpu_blocks()
             cpu_cache_usage_sys = 1.0 - (num_free_cpu / num_total_cpu)
 
         # Prefix Cache Hit Rate. Note that we always use

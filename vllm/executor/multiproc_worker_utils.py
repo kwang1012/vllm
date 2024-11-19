@@ -84,7 +84,7 @@ class ResultHandler(threading.Thread):
         self.tasks: Dict[uuid.UUID, Union[ResultFuture, asyncio.Future]] = {}
 
     def run(self):
-        for result in iter(self.result_queue.get, _TERMINATE):
+        for result in iter(self.result_output.recv, _TERMINATE):
             future = self.tasks.pop(result.task_id)
             _set_future_result(future, result)
         # Ensure that all waiters will receive an exception
@@ -95,7 +95,7 @@ class ResultHandler(threading.Thread):
                        exception=ChildProcessError("worker died")))
 
     def close(self):
-        self.result_queue.put(_TERMINATE)
+        self.result_queue.send(_TERMINATE)
 
 
 class WorkerMonitor(threading.Thread):
@@ -174,7 +174,7 @@ class ProcessWorkerWrapper:
         task_id = uuid.uuid4()
         self.tasks[task_id] = future
         try:
-            self._task_queue.put((task_id, method, args, kwargs, put_time))
+            self._task_input.send((task_id, method, args, kwargs, put_time))
         except SystemExit:
             raise
         except BaseException as e:
@@ -194,13 +194,13 @@ class ProcessWorkerWrapper:
 
     def terminate_worker(self):
         try:
-            self._task_queue.put(_TERMINATE)
+            self._task_input.send(_TERMINATE)
         except ValueError:
             self.process.kill()
-        self._task_queue.close()
+        self._task_input.close()
 
     def kill_worker(self):
-        self._task_queue.close()
+        self._task_input.close()
         self.process.kill()
 
 

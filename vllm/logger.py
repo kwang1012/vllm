@@ -23,9 +23,11 @@ _FORMAT = (f"{VLLM_LOGGING_PREFIX}%(levelname)s %(asctime)s "
            "%(filename)s:%(lineno)d] %(message)s")
 _DATE_FORMAT = "%m-%d %H:%M:%S"
 
-handlers = ["file_handler"]
-if VLLM_LOGGING_FILENAME == "results.log":
+handlers = []
+if VLLM_LOGGING_FILENAME is None:
     handlers.append("vllm")
+else:
+    handlers.append("file_handler")
 
 DEFAULT_LOGGING_CONFIG = {
     "formatters": {
@@ -46,7 +48,7 @@ DEFAULT_LOGGING_CONFIG = {
             "formatter": "vllm",
             "level": VLLM_LOGGING_LEVEL,
             "class": "logging.FileHandler",
-            "filename": VLLM_LOGGING_FILENAME,
+            "filename": VLLM_LOGGING_FILENAME or "vllm.log",
             "mode": "a",
         },
     },

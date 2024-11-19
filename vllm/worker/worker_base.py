@@ -262,7 +262,6 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     is_driver_worker: bool
     model_runner: ModelRunnerBase
     observability_config: Optional[ObservabilityConfig] = None
-    pp_lock = None
 
     @property
     @abstractmethod
@@ -385,14 +384,15 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
 
-        # with self.pp_lock:
-        if get_pp_group().rank_in_group == 0:
-            logger.info("Start execute model virtual engine: %s", execute_model_req.virtual_engine)
+        enter_time = time.time()
+        if not execute_model_req.seq_group_metadata_list[0].is_prompt and get_pp_group().is_first_rank:
+            logger.info("Virtual engine: %s, time for enter: %s", execute_model_req.virtual_engine, enter_time - execute_model_req.now)
 
         exec_start_time = time.time()
         inputs = self.prepare_input(execute_model_req)
         if inputs is None:
             return None
+        logger.info("Virtual engine: %s, prepare_model_input: %s", execute_model_req.virtual_engine, time.time() - exec_start_time)
 
         model_input, worker_input, kwargs = inputs
         num_steps = worker_input.num_steps
@@ -410,7 +410,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         if not get_pp_group().is_first_rank:
             recv_timestamp = start = time.time()
             intermediate_tensors = IntermediateTensors(
-                get_pp_group().recv_tensor_dict(all_gather_group=get_tp_group()))
+                get_pp_group().recv_tensor_dict_async(all_gather_group=get_tp_group()))
             model_recv_time = time.time() - start
             
             if (self.observability_config is not None
@@ -423,7 +423,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         start_time = time.perf_counter()
         output = self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache
+            kv_caches=self.kv_cache[worker_input.virtual_engine]
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             num_steps=num_steps,
@@ -431,7 +431,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         )
         torch.cuda.synchronize()
 
-        model_execute_time = time.perf_counter() - start_time
+        model_execute_time = time.time() - model_exec_timestamp
         if not get_pp_group().is_last_rank:
             # output is IntermediateTensors
             assert isinstance(output, IntermediateTensors)
@@ -441,11 +441,9 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     model_execute_time + orig_model_execute_time)
             
             send_timestamp = time.time()
-            get_pp_group().send_tensor_dict(output.tensors, all_gather_group=get_tp_group())
+            get_pp_group().send_tensor_dict_async(output.tensors)
             model_send_time = time.time() - send_timestamp
             
-            if get_pp_group().rank_in_group == 0:
-                logger.info("Finish execute model virtual engine: %s", execute_model_req.virtual_engine)
             return [None], {
                 "start_timestamp": exec_start_time,
                 "end_timestamp": None,
@@ -464,8 +462,6 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                                         model_execute_time)
         exec_end_time = time.time()
         # output is List[SamplerOutput]
-        if get_pp_group().rank_in_group == 0:
-            logger.info("Finish execute model virtual engine: %s", execute_model_req.virtual_engine)
         return output, {
             "start_timestamp": exec_start_time,
             "end_timestamp": exec_end_time,
@@ -506,7 +502,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
 
         return self.model_runner.execute_model(
             model_input=model_input,
-            kv_caches=self.kv_cache
+            kv_caches=self.kv_cache[worker_input.virtual_engine]
             if self.kv_cache is not None else None,
             intermediate_tensors=intermediate_tensors,
             **kwargs,

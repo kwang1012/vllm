@@ -1517,7 +1517,7 @@ class GPUModelRunnerBase(ModelRunnerBase[TModelInputForGPU]):
                         intermediate_inputs[:batch_size]
                         if intermediate_inputs is not None else None,
                         "kv_caches":
-                        kv_caches,
+                        kv_caches[virtual_engine],
                         "attn_metadata":
                         attn_metadata,
                         "memory_pool":

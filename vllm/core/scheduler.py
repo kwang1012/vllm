@@ -344,25 +344,28 @@ class Scheduler:
                 or self.cache_config.is_attention_free):
             version = "placeholder"
 
-        self.block_manager = block_manager
-        # BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
-        #     version)
+        num_gpu_blocks = cache_config.num_gpu_blocks
+        num_cpu_blocks = cache_config.num_cpu_blocks
+        
+        if cache_config.strict_mem_boundary:
+            BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
+                version)
 
-        # num_gpu_blocks = cache_config.num_gpu_blocks
-        # if num_gpu_blocks:
-        #     num_gpu_blocks //= pipeline_parallel_size
+            if num_gpu_blocks:
+                num_gpu_blocks //= pipeline_parallel_size
 
-        # num_cpu_blocks = cache_config.num_cpu_blocks
-        # if num_cpu_blocks:
-        #     num_cpu_blocks //= pipeline_parallel_size
+            if num_cpu_blocks:
+                num_cpu_blocks //= pipeline_parallel_size
 
-        # # Create the block space manager.
-        # self.block_manager = BlockSpaceManagerImpl(
-        #     block_size=self.cache_config.block_size,
-        #     num_gpu_blocks=num_gpu_blocks,
-        #     num_cpu_blocks=num_cpu_blocks,
-        #     sliding_window=self.cache_config.sliding_window,
-        #     enable_caching=self.cache_config.enable_prefix_caching)
+            # Create the block space manager.
+            self.block_manager = BlockSpaceManagerImpl(
+                block_size=self.cache_config.block_size,
+                num_gpu_blocks=num_gpu_blocks,
+                num_cpu_blocks=num_cpu_blocks,
+                sliding_window=self.cache_config.sliding_window,
+                enable_caching=self.cache_config.enable_prefix_caching)
+        else:
+            self.block_manager = block_manager
 
         # Sequence groups in the WAITING state.
         # Contain new prefill or preempted requests.

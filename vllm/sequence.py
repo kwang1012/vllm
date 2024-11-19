@@ -1312,6 +1312,8 @@ class ExecuteModelRequest(
     last_sampled_token_ids: Optional[torch.Tensor] = None
     # Async callback
     async_callback: Optional[Callable] = None
+    
+    now: Optional[float] = None
 
     @property
     def is_first_multi_step(self) -> bool:

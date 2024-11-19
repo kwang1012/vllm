@@ -212,13 +212,20 @@ class MultiprocessingGPUExecutor(DistributedGPUExecutor):
         for result in parallel_worker_tasks:
             result.get()
 
+def run_with_lock(lock, func):
+    def wrapper(*args, **kwargs):
+        with lock:
+            return func(*args, **kwargs)
+    return wrapper
+
 class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
                                       DistributedGPUExecutorAsync):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.driver_exec_model = make_async(self.driver_worker.execute_model)
-        # self.pp_locks: Optional[List[asyncio.Lock]] = None
+        self.driver_lock = multiprocessing.Lock()
+        self.driver_exec_model = make_async(run_with_lock(self.driver_lock, self.driver_worker.execute_model))
+        self.pp_locks: Optional[List[asyncio.Lock]] = None
 
     async def _driver_execute_model_async(
         self,
@@ -244,13 +251,12 @@ class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
         #     ]
             
         start_time = time.time()
+        execute_model_req.now = start_time  
         tasks = [self.driver_exec_model(execute_model_req)]
         tasks.extend([
             worker.execute_method_async("execute_model", execute_model_req)
             for worker in self.tp_driver_workers
         ])
-        results = await asyncio.gather(*tasks)
-        start_time = time.time() - start_time
         # tasks = [
         #     asyncio.create_task(
         #         _run_task_with_lock(self.driver_exec_model, self.pp_locks[0],
@@ -260,11 +266,12 @@ class MultiprocessingGPUExecutorAsync(MultiprocessingGPUExecutor,
         #                                         start=1):
         #     tasks.append(
         #         asyncio.create_task(
-        #             _run_task_with_lock(driver_worker.execute_method,
+        #             _run_task_with_lock(driver_worker.execute_method_async,
         #                                 self.pp_locks[pp_rank],
         #                                 "execute_model", execute_model_req)))
-        # results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*tasks)
         output = results[-1][0]
+        start_time = time.time() - start_time
 
         for o in output:
             o.stage_info = [r[1] for r in results]

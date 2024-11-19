@@ -741,6 +741,8 @@ class GroupCoordinator:
         recv_metadata_list = self.recv_object(src=src)
         tensor_dict: Dict[str, Any] = {}
         for key, value in recv_metadata_list:
+            if key == "termination":
+                return None
             if isinstance(value, TensorMetadata):
                 tensor = torch.empty(value.size,
                                      dtype=value.dtype,
@@ -914,19 +916,21 @@ class AsyncGroupCoordinator(GroupCoordinator):
     
     def handle_request_worker(self):
         while True:
-            signal = self.recv_signal()
-            if signal == -1:
-                return
+            # signal = self.recv_signal()
+            # if signal == -1:
+            #     return
             tensor_dict = self.recv_tensor_dict(all_gather_group=get_tp_group())
+            if tensor_dict is None:
+                return
             self._recv_buffer.put(tensor_dict)
 
     def send_request_worker(self):
         while True:
             tensor_dict = self._send_buffer.get()
             if tensor_dict is None:
-                self.send_signal(signal=-1)
+                self.send_tensor_dict({"termination": torch.tensor(1, dtype=torch.long, device="cpu")})
                 return
-            self.send_signal()
+            # self.send_signal()
             self.send_tensor_dict(tensor_dict, all_gather_group=get_tp_group())
 
     def destroy(self):
@@ -1175,7 +1179,8 @@ def initialize_model_parallel(
                                     get_world_group().local_rank,
                                     backend,
                                     use_custom_allreduce=False,
-                                    group_name="pp")
+                                    group_name="pp",
+                                    asynchronous=True)
 
 
 def ensure_kv_transfer_initialized(vllm_config: "VllmConfig") -> None:
