@@ -732,6 +732,7 @@ class CacheConfig:
         self.sliding_window = sliding_window
         self.enable_prefix_caching = enable_prefix_caching
         self.cpu_offload_gb = cpu_offload_gb
+        self.strict_mem_boundary = envs.VLLM_STRICT_MEMORY_BOUNDARY
 
         self._verify_args()
         self._verify_cache_dtype()

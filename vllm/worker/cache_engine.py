@@ -40,11 +40,11 @@ class CacheEngine:
 
         self.block_size = cache_config.block_size
         self.num_gpu_blocks = cache_config.num_gpu_blocks
-        # if self.num_gpu_blocks:
-        #     self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
+        if self.num_gpu_blocks and cache_config.strict_mem_boundary:
+            self.num_gpu_blocks //= parallel_config.pipeline_parallel_size
         self.num_cpu_blocks = cache_config.num_cpu_blocks
-        # if self.num_cpu_blocks:
-        #     self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
+        if self.num_cpu_blocks and cache_config.strict_mem_boundary:
+            self.num_cpu_blocks //= parallel_config.pipeline_parallel_size
 
         if cache_config.cache_dtype == "auto":
             self.dtype = model_config.dtype

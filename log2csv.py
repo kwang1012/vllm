@@ -63,7 +63,7 @@ def main(filename):
             result = {}
             time_str = line.split(" ")[2]
             if e2e_latency is None:
-                e2e_latency = datetime.strptime(time_str, "%H:%M:%S.%f")
+                e2e_latency = datetime.strptime(time_str, "%H:%M:%S")
             result["ts"] = time_str
             info = line[line.find("] ") + 2:]
             info = info.split(",")
@@ -92,7 +92,7 @@ def main(filename):
             num_eviction += 1
         elif "Engine is gracefully shutting down" in line:
             time_str = line.split(" ")[2]
-            e2e_latency = datetime.strptime(time_str, "%H:%M:%S.%f") - e2e_latency
+            e2e_latency = datetime.strptime(time_str, "%H:%M:%S") - e2e_latency
 
 
     fields = ["ts", "kv", "compute", "throughput", "ttft", "tpot", "batch_size", "is_prefill", "num_seqs", "seq_id"]

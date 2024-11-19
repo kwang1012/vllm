@@ -1,3 +1,4 @@
+import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 from vllm.executor.executor_base import ExecutorAsyncBase, ExecutorBase
@@ -122,7 +123,12 @@ class GPUExecutor(ExecutorBase):
     def execute_model(
         self, execute_model_req: ExecuteModelRequest
     ) -> Optional[List[Union[SamplerOutput, PoolerOutput]]]:
-        output = self.driver_worker.execute_model(execute_model_req)
+        start_time = time.time()
+        output, info = self.driver_worker.execute_model(execute_model_req)
+        start_time = time.time() - start_time
+        for o in output:
+            o.stage_info = [info]
+            o.latency = start_time
         return output
 
     def add_lora(self, lora_request: LoRARequest) -> bool:
@@ -177,6 +183,11 @@ class GPUExecutorAsync(GPUExecutor, ExecutorAsyncBase):
         self,
         execute_model_req: ExecuteModelRequest,
     ) -> List[Union[SamplerOutput, PoolerOutput]]:
-        output = await make_async(self.driver_worker.execute_model
+        start_time = time.time()
+        output, info = await make_async(self.driver_worker.execute_model
                                   )(execute_model_req=execute_model_req)
+        start_time = time.time() - start_time
+        for o in output:
+            o.stage_info = [info]
+            o.latency = start_time
         return output

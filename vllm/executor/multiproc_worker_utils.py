@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing
+import multiprocessing.connection
 import os
 import sys
 import threading
@@ -74,11 +75,11 @@ class ResultHandler(threading.Thread):
 
     def __init__(self) -> None:
         super().__init__(daemon=True)
-        self.result_queue = get_mp_context().Queue()
+        self.result_output, self.result_input = get_mp_context().Pipe()
         self.tasks: Dict[uuid.UUID, Union[ResultFuture, asyncio.Future]] = {}
 
     def run(self):
-        for result in iter(self.result_queue.get, _TERMINATE):
+        for result in iter(self.result_output.recv, _TERMINATE):
             future = self.tasks.pop(result.task_id)
             _set_future_result(future, result)
         # Ensure that all waiters will receive an exception
@@ -89,7 +90,7 @@ class ResultHandler(threading.Thread):
                        exception=ChildProcessError("worker died")))
 
     def close(self):
-        self.result_queue.put(_TERMINATE)
+        self.result_input.send(_TERMINATE)
 
 
 class WorkerMonitor(threading.Thread):
@@ -145,16 +146,16 @@ class ProcessWorkerWrapper:
     def __init__(self, result_handler: ResultHandler,
                  worker_factory: Callable[[], Any]) -> None:
         self.mp = get_mp_context()
-        self._task_queue = self.mp.Queue()
-        self.result_queue = result_handler.result_queue
+        self._task_output, self._task_input = self.mp.Pipe()
+        self.result_input = result_handler.result_input
         self.tasks = result_handler.tasks
         self.process: BaseProcess = self.mp.Process(  # type: ignore[attr-defined]
             target=_run_worker_process,
             name="VllmWorkerProcess",
             kwargs=dict(
                 worker_factory=worker_factory,
-                task_queue=self._task_queue,
-                result_queue=self.result_queue,
+                task_output=self._task_output,
+                result_input=self.result_input,
             ),
             daemon=True)
 
@@ -165,7 +166,7 @@ class ProcessWorkerWrapper:
         task_id = uuid.uuid4()
         self.tasks[task_id] = future
         try:
-            self._task_queue.put((task_id, method, args, kwargs, put_time))
+            self._task_input.send((task_id, method, args, kwargs, put_time))
         except SystemExit:
             raise
         except BaseException as e:
@@ -184,20 +185,20 @@ class ProcessWorkerWrapper:
 
     def terminate_worker(self):
         try:
-            self._task_queue.put(_TERMINATE)
+            self._task_input.send(_TERMINATE)
         except ValueError:
             self.process.kill()
-        self._task_queue.close()
+        self._task_input.close()
 
     def kill_worker(self):
-        self._task_queue.close()
+        self._task_input.close()
         self.process.kill()
 
 
 def _run_worker_process(
     worker_factory: Callable[[], Any],
-    task_queue: Queue,
-    result_queue: Queue,
+    task_output: multiprocessing.connection.Connection,
+    result_input: Queue,
 ) -> None:
     """Worker process event loop"""
 
@@ -215,16 +216,13 @@ def _run_worker_process(
     # and return task output in result_queue
     logger.info("Worker ready; awaiting tasks")
     try:
-        for items in iter(task_queue.get, _TERMINATE):
+        for items in iter(task_output.recv, _TERMINATE):
             output = None
             exception = None
             task_id, method, args, kwargs, put_time = items
             try:
-                start_time = time.time()
-                # print(method, "time diff", start_time - put_time)
                 executor = getattr(worker, method)
                 output = executor(*args, **kwargs)
-                # print(method, "execution time:", time.time() - start_time)
             except SystemExit:
                 raise
             except KeyboardInterrupt:
@@ -234,7 +232,7 @@ def _run_worker_process(
                     "Exception in worker %s while processing method %s.",
                     process_name, method)
                 exception = e
-            result_queue.put(
+            result_input.send(
                 Result(task_id=task_id, value=output, exception=exception))
     except KeyboardInterrupt:
         pass

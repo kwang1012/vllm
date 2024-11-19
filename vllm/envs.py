@@ -70,7 +70,8 @@ if TYPE_CHECKING:
     VLLM_DISABLED_KERNELS: List[str] = []
     VLLM_USE_V1: bool = False
     VLLM_ENABLE_V1_MULTIPROCESSING: bool = False
-    VLLM_LOGGING_FILENAME: str = "results.log"
+    VLLM_LOGGING_FILENAME: Optional[str] = None
+    VLLM_STRICT_MEMORY_BOUNDARY: bool = False
 
 
 def get_default_cache_root():
@@ -461,7 +462,11 @@ environment_variables: Dict[str, Callable[[], Any]] = {
     
     # If set, log file name to write logs to
     "VLLM_LOGGING_FILENAME":
-    lambda: os.getenv("VLLM_LOGGING_FILENAME", "results.log"),
+    lambda: os.getenv("VLLM_LOGGING_FILENAME", None),
+    
+    # If set, enforce strict memory boundary betwen virtual engines
+    "VLLM_STRICT_MEMORY_BOUNDARY":
+    lambda: os.getenv("VLLM_STRICT_MEMORY_BOUNDARY", False),
 }
 
 # end-env-vars-definition
