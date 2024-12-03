@@ -692,6 +692,7 @@ class GroupCoordinator:
         # all happening on CPU. Therefore, we can use the CPU group.
         self.send_object(metadata_list, dst=dst)
         
+        async_handles = []
         for tensor in tensor_list:
             if tensor.numel() == 0:
                 # Skip sending empty tensors.
@@ -704,14 +705,18 @@ class GroupCoordinator:
 
             if tensor.is_cpu:
                 # use metadata_group for CPU tensors
-                torch.distributed.send(tensor,
+                handle = torch.distributed.isend(tensor,
                                     dst=self.ranks[dst],
                                     group=metadata_group)
             else:
                 # use group for GPU tensors
-                torch.distributed.send(tensor,
+                handle = torch.distributed.isend(tensor,
                                     dst=self.ranks[dst],
                                     group=group)
+            async_handles.append(handle)
+        for async_handle in async_handles:
+            async_handle.wait()
+        
         return None
 
     def recv_tensor_dict(
@@ -740,6 +745,7 @@ class GroupCoordinator:
 
         recv_metadata_list = self.recv_object(src=src)
         tensor_dict: Dict[str, Any] = {}
+        async_handles = []
         for key, value in recv_metadata_list:
             if key == "termination":
                 return None
@@ -763,12 +769,12 @@ class GroupCoordinator:
 
                 if tensor.is_cpu:
                     # use metadata_group for CPU tensors
-                    torch.distributed.recv(tensor,
+                    handle = torch.distributed.irecv(tensor,
                                            src=self.ranks[src],
                                            group=metadata_group)
                 else:
                     # use group for GPU tensors
-                    torch.distributed.recv(tensor,
+                    handle = torch.distributed.irecv(tensor,
                                            src=self.ranks[src],
                                            group=group)
                 if use_all_gather:
@@ -777,9 +783,12 @@ class GroupCoordinator:
                         tensor, dim=0)
                     tensor = tensor.reshape(orig_shape)
 
+                async_handles.append(handle)
                 tensor_dict[key] = tensor
             else:
                 tensor_dict[key] = value
+        for async_handle in async_handles:
+            async_handle.wait()
         return tensor_dict
 
     def barrier(self):
@@ -1179,8 +1188,7 @@ def initialize_model_parallel(
                                     get_world_group().local_rank,
                                     backend,
                                     use_custom_allreduce=False,
-                                    group_name="pp",
-                                    asynchronous=True)
+                                    group_name="pp")
 
 
 def ensure_kv_transfer_initialized(vllm_config: "VllmConfig") -> None:

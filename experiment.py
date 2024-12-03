@@ -48,6 +48,7 @@ async def main(args):
     avg_generated_text_len = []
     for output in outputs:
         generated_text = output.outputs[0].text
+        # print(generated_text)
         avg_generated_text_len.append(len(generated_text))
 
     destroy_model_parallel()

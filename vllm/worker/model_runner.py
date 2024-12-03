@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import (TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set,
                     Tuple, Type, TypeVar, Union)
 
+import dill
 import numpy as np
 import torch
 import torch.distributed

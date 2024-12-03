@@ -6,6 +6,7 @@ from typing import Dict, List, Optional, Type, Union, cast
 
 import numpy as np
 import prometheus_client
+import psutil
 import torch
 
 from vllm.config import VllmConfig

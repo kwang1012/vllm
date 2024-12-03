@@ -1,4 +1,3 @@
-import asyncio
 import dataclasses
 import os
 import time
@@ -350,6 +349,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                 model_input,
                 async_callback=execute_model_req.async_callback)
 
+        # print("Virtual engine: %s, time for prepare_worker_input: %s" % (execute_model_req.virtual_engine, time.time() - execute_model_req.now))
         return model_input, worker_input, kwargs
 
     def prepare_input(
@@ -384,15 +384,20 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
 
-        enter_time = time.time()
-        if not execute_model_req.seq_group_metadata_list[0].is_prompt and get_pp_group().is_first_rank:
-            logger.info("Virtual engine: %s, time for enter: %s", execute_model_req.virtual_engine, enter_time - execute_model_req.now)
-
+        last_exec_timestamp = None
+        last_exec_time = None
+        enter_timestamp = None
+        enter_time = None
+        if execute_model_req is not None:
+            last_exec_timestamp = self.last_executed or execute_model_req.now or 0
+            last_exec_time = time.time() - last_exec_timestamp
+            enter_timestamp = execute_model_req.now
+            enter_time = time.time() - execute_model_req.now
         exec_start_time = time.time()
         inputs = self.prepare_input(execute_model_req)
+        prepare_input_time = time.time() - exec_start_time
         if inputs is None:
             return None
-        logger.info("Virtual engine: %s, prepare_model_input: %s", execute_model_req.virtual_engine, time.time() - exec_start_time)
 
         model_input, worker_input, kwargs = inputs
         num_steps = worker_input.num_steps
@@ -410,15 +415,14 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         if not get_pp_group().is_first_rank:
             recv_timestamp = start = time.time()
             intermediate_tensors = IntermediateTensors(
-                get_pp_group().recv_tensor_dict_async(all_gather_group=get_tp_group()))
+                get_pp_group().recv_tensor_dict(all_gather_group=get_tp_group()))
             model_recv_time = time.time() - start
-            
+
             if (self.observability_config is not None
                     and self.observability_config.collect_model_execute_time):
                 orig_model_execute_time = intermediate_tensors.tensors.get(
                     "model_execute_time", torch.tensor(0)).item()
 
-        torch.cuda.synchronize()
         model_exec_timestamp = time.time()
         start_time = time.perf_counter()
         output = self.model_runner.execute_model(
@@ -439,21 +443,28 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                     and self.observability_config.collect_model_execute_time):
                 output.tensors["model_execute_time"] = torch.tensor(
                     model_execute_time + orig_model_execute_time)
-            
+
             send_timestamp = time.time()
-            get_pp_group().send_tensor_dict_async(output.tensors)
+            get_pp_group().send_tensor_dict(output.tensors, all_gather_group=get_tp_group())
             model_send_time = time.time() - send_timestamp
-            
+
+            if execute_model_req is not None:
+                self.last_executed = time.time()
             return [None], {
+                "enter_timestamp": enter_timestamp,
+                "enter_time": enter_time,
+                "prev_exec_timestamp": last_exec_timestamp,
+                "prev_exec_time": last_exec_time,
                 "start_timestamp": exec_start_time,
                 "end_timestamp": None,
+                "prep_time": prepare_input_time,
                 "send_time": model_send_time,
                 "recv_time": model_recv_time,
                 "exec_time": model_execute_time,
                 "send_timestamp": send_timestamp,
                 "recv_timestamp": recv_timestamp,
                 "exec_timestamp": model_exec_timestamp,
-                }
+            }
         if (self.observability_config is not None
                 and self.observability_config.collect_model_execute_time
                 and output is not None):
@@ -462,9 +473,16 @@ class LocalOrDistributedWorkerBase(WorkerBase):
                                         model_execute_time)
         exec_end_time = time.time()
         # output is List[SamplerOutput]
+        if execute_model_req is not None:
+            self.last_executed = time.time()
         return output, {
+            "enter_timestamp": enter_timestamp,
+            "enter_time": enter_time,
+            "prev_exec_timestamp": last_exec_timestamp,
+            "prev_exec_time": last_exec_time,
             "start_timestamp": exec_start_time,
             "end_timestamp": exec_end_time,
+            "prep_time": prepare_input_time,
             "send_time": None,
             "recv_time": model_recv_time,
             "exec_time": model_execute_time,

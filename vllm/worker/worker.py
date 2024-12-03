@@ -1,7 +1,7 @@
 """A GPU worker class."""
 import asyncio
 import gc
-import multiprocessing
+import multiprocessing as mp
 import os
 from typing import Dict, List, Optional, Set, Tuple, Type, Union
 
@@ -112,6 +112,8 @@ class Worker(LocalOrDistributedWorkerBase):
                     torch_profiler_trace_dir, use_gzip=True))
         else:
             self.profiler = None
+        
+        self.last_executed = None
 
     def start_profile(self):
         if self.profiler is None:

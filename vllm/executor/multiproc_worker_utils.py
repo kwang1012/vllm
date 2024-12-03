@@ -1,5 +1,6 @@
 import asyncio
 import os
+import pickle
 import sys
 import threading
 import time
@@ -84,7 +85,7 @@ class ResultHandler(threading.Thread):
         self.tasks: Dict[uuid.UUID, Union[ResultFuture, asyncio.Future]] = {}
 
     def run(self):
-        for result in iter(self.result_output.recv, _TERMINATE):
+        for result in iter(self.result_queue.get, _TERMINATE):
             future = self.tasks.pop(result.task_id)
             _set_future_result(future, result)
         # Ensure that all waiters will receive an exception
@@ -95,7 +96,7 @@ class ResultHandler(threading.Thread):
                        exception=ChildProcessError("worker died")))
 
     def close(self):
-        self.result_queue.send(_TERMINATE)
+        self.result_queue.put(_TERMINATE)
 
 
 class WorkerMonitor(threading.Thread):
@@ -168,13 +169,13 @@ class ProcessWorkerWrapper:
             daemon=True)
 
         self.process.start()
-
+    
     def _enqueue_task(self, future: Union[ResultFuture, asyncio.Future],
                       method: Union[str, bytes], args, kwargs, put_time=None):
         task_id = uuid.uuid4()
         self.tasks[task_id] = future
         try:
-            self._task_input.send((task_id, method, args, kwargs, put_time))
+            self._task_queue.put((task_id, method, args, kwargs, time.time()))
         except SystemExit:
             raise
         except BaseException as e:
@@ -183,24 +184,24 @@ class ProcessWorkerWrapper:
 
     def execute_method(self, method: Union[str, bytes], *args, **kwargs):
         future: ResultFuture = ResultFuture()
-        self._enqueue_task(future, method, args, kwargs, put_time=time.time())
+        self._enqueue_task(future, method, args, kwargs)
         return future
 
     async def execute_method_async(self, method: Union[str, bytes], *args,
                                    **kwargs):
         future = asyncio.get_running_loop().create_future()
-        self._enqueue_task(future, method, args, kwargs, put_time=time.time())
+        self._enqueue_task(future, method, args, kwargs)
         return await future
 
     def terminate_worker(self):
         try:
-            self._task_input.send(_TERMINATE)
+            self._task_queue.put(_TERMINATE)
         except ValueError:
             self.process.kill()
-        self._task_input.close()
+        self._task_queue.close()
 
     def kill_worker(self):
-        self._task_input.close()
+        self._task_queue.close()
         self.process.kill()
 
 
@@ -226,16 +227,20 @@ def _run_worker_process(
     # Accept tasks from the engine in task_queue
     # and return task output in result_queue
     logger.info("Worker ready; awaiting tasks")
+    last_executed = time.time()
     try:
         for items in iter(task_queue.get, _TERMINATE):
             output = None
             exception = None
             task_id, method, args, kwargs, put_time = items
             try:
-                start_time = time.time()
-                # print(method, "time diff", start_time - put_time)
+                if method == "execute_model":
+                    ve = args[0].virtual_engine
+                    logger.info("Virtual engine: %s, executor start: %s, interval: %s", ve, time.time(), time.time() - last_executed)
                 output = run_method(worker, method, args, kwargs)
-                # print(method, "execution time:", time.time() - start_time)
+                if method == "execute_model":
+                    ve = args[0].virtual_engine
+                    logger.info("Virtual engine: %s, executor end: %s", ve, time.time())
             except SystemExit:
                 raise
             except KeyboardInterrupt:
@@ -247,6 +252,7 @@ def _run_worker_process(
                 exception = e
             result_queue.put(
                 Result(task_id=task_id, value=output, exception=exception))
+            last_executed = time.time()
     except KeyboardInterrupt:
         pass
     except Exception:

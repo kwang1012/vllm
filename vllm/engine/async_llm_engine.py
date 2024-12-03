@@ -263,7 +263,6 @@ class _AsyncLLMEngine(LLMEngine):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.last_executed = [None for _ in range(self.parallel_config.pipeline_parallel_size)]
 
     async def step_async(
         self, virtual_engine: int, now: Optional[time.time] = None
@@ -348,21 +347,11 @@ class _AsyncLLMEngine(LLMEngine):
                 execute_model_req.async_callback = self.async_callbacks[
                     virtual_engine]
 
-
-            start = time.time()
-            # if now is not None:
-            #     logger.info("start diffP %s", start - now)
-            # if self.last_executed[virtual_engine] is not None:
-            #     print("Start diff", start - self.last_executed[virtual_engine]["start"])
-            #     print("Start end diff", start - self.last_executed[virtual_engine]["end"])
+            logger.info("Virtual engine: %s, timestamp before execution: %s", virtual_engine, time.time())
             # Execute the model.
+            execute_model_req.now = time.time()
             outputs = await self.model_executor.execute_model_async(
                 execute_model_req)
-            end = time.time()
-            self.last_executed[virtual_engine] = {
-                "start": start,
-                "end": end,
-            }
 
             # we need to do this here so that last step's sampled_token_ids can
             # be passed to the next iteration for PP.
@@ -406,7 +395,8 @@ class _AsyncLLMEngine(LLMEngine):
                     scheduler_outputs.scheduled_seq_groups)
 
             if not allow_async_output_proc:
-                self._process_model_outputs(ctx=ctx)
+                self._process_model_outputs(ctx=ctx, virtual_engine=virtual_engine)
+                logger.info("Virtual engine: %s, process timestamp: %s", virtual_engine, time.time())
 
                 # Log stats.
                 self.do_log_stats(scheduler_outputs, outputs, virtual_engine=virtual_engine)
@@ -424,7 +414,7 @@ class _AsyncLLMEngine(LLMEngine):
                 self._process_model_outputs(ctx=ctx)
             assert len(ctx.output_queue) == 0
 
-        return ctx.request_outputs, end
+        return ctx.request_outputs
 
     async def stop_remote_worker_execution_loop_async(self) -> None:
         """Stop the remote worker execution loop."""
@@ -733,7 +723,7 @@ class AsyncLLMEngine(EngineClient):
             self._background_loop_unshielded = None
         self.background_loop = None
 
-    async def engine_step(self, virtual_engine: int, now: Optional[time.time] = None) -> bool:
+    async def engine_step(self, virtual_engine: int) -> bool:
         """Kick the engine to process the waiting requests.
 
         Returns True if there are in-progress requests."""
@@ -755,8 +745,8 @@ class AsyncLLMEngine(EngineClient):
 
         if aborted_requests:
             await self._engine_abort(aborted_requests)
-
-        request_outputs, end = await self.engine.step_async(virtual_engine, now)
+        
+        request_outputs = await self.engine.step_async(virtual_engine)
 
         # Put the outputs into the corresponding streams.
         # If used as a callback, then already invoked inside
@@ -769,9 +759,8 @@ class AsyncLLMEngine(EngineClient):
             all_finished = all(request_output.finished
                                for request_output in request_outputs)
 
-        
-        # logger.info("Virtual engine: %s before return diff: %s", virtual_engine, time.time() - end)
-        return not all_finished, end
+        logger.info("Virtual engine: %s, left time: %s", virtual_engine, time.time())
+        return not all_finished
 
     def process_request_outputs(self, request_outputs) -> bool:
         # Put the outputs into the corresponding streams.
@@ -837,18 +826,16 @@ class AsyncLLMEngine(EngineClient):
                     for _ in range(pipeline_parallel_size):
                         await asyncio.sleep(0)
                 for task in done:
-                    result, end = task.result()
-                    # logger.info("end diff: %s (%s)", time.time() - end, result)
+                    result = task.result()
                     virtual_engine = requests_in_progress.index(task)
                     has_unfinished_requests = (
                         engine.engine.
                         has_unfinished_requests_for_virtual_engine(
                             virtual_engine))
                     if result or has_unfinished_requests:
-                        now = time.time()
                         requests_in_progress[virtual_engine] = (
                             asyncio.create_task(
-                                engine.engine_step(virtual_engine, now)))
+                                engine.engine_step(virtual_engine)))
                         has_requests_in_progress[virtual_engine] = True
                     else:
                         has_requests_in_progress[virtual_engine] = False

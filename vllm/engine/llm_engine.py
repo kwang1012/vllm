@@ -343,22 +343,22 @@ class LLMEngine:
         self.process_request_outputs_callback: Optional[Callable] = None
 
         block_manager = None
-        if not cache_config.strict_mem_boundary:
+        if not self.cache_config.strict_mem_boundary:
             version = "selfattn"
-            if (self.scheduler_config.task == "embedding"
+            if (self.scheduler_config.runner_type == "pooling"
                     or self.cache_config.is_attention_free):
                 version = "placeholder"
-                
+
             BlockSpaceManagerImpl = BlockSpaceManager.get_block_space_manager_class(
                 version)
-            
+
             block_manager = BlockSpaceManagerImpl(
                 block_size=self.cache_config.block_size,
                 num_gpu_blocks=self.cache_config.num_gpu_blocks,
                 num_cpu_blocks=self.cache_config.num_cpu_blocks,
                 sliding_window=self.cache_config.sliding_window,
                 enable_caching=self.cache_config.enable_prefix_caching)
-            
+
         # Create the scheduler.
         # NOTE: the cache_config here have been updated with the numbers of
         # GPU and CPU blocks, which are profiled in the distributed executor.
@@ -510,10 +510,10 @@ class LLMEngine:
 
         return engine
 
-    def __reduce__(self):
-        # This is to ensure that the LLMEngine is not referenced in
-        # the closure used to initialize Ray worker actors
-        raise RuntimeError("LLMEngine should not be pickled!")
+    # def __reduce__(self):
+    #     # This is to ensure that the LLMEngine is not referenced in
+    #     # the closure used to initialize Ray worker actors
+    #     raise RuntimeError("LLMEngine should not be pickled!")
 
     def __del__(self):
         # Shutdown model executor when engine is garbage collected
@@ -753,8 +753,8 @@ class LLMEngine:
                              "Priority scheduling is not enabled.")
 
         if isinstance(params, SamplingParams) \
-            and (params.guided_decoding or params.logits_processors) \
-            and self.scheduler_config.num_scheduler_steps > 1:
+                and (params.guided_decoding or params.logits_processors) \
+                and self.scheduler_config.num_scheduler_steps > 1:
             raise ValueError(
                 "Guided decoding and logits processors are not supported "
                 "in multi-step decoding")
@@ -996,6 +996,7 @@ class LLMEngine:
 
     def _process_model_outputs(self,
                                ctx: SchedulerContext,
+                               virtual_engine: int = 0,
                                request_id: Optional[str] = None) -> None:
         """Apply the model output to the sequences in the scheduled seq groups
         and return responses.
@@ -1028,7 +1029,7 @@ class LLMEngine:
         outputs_by_sequence_group: List[List[SequenceGroupOutput]]
         if has_multiple_outputs:
             assert self.scheduler_config.is_multi_step or \
-                     self.speculative_config
+                self.speculative_config
             # Organize outputs by [step][sequence group] instead of
             # [sequence group][step].
             if self.scheduler_config.is_multi_step:
@@ -1073,6 +1074,7 @@ class LLMEngine:
 
         finished_before: List[int] = []
         finished_now: List[int] = []
+
         for i in indices:
             if i in skip:
                 continue
@@ -1169,6 +1171,7 @@ class LLMEngine:
                 self.process_request_outputs_callback(ctx.request_outputs)
                 ctx.request_outputs.clear()
             return
+        # logger.info("Virtual engine: %s, process half way timestamp: %s", virtual_engine, time.time())
 
         # Create the outputs
         for i in indices:
@@ -1238,7 +1241,7 @@ class LLMEngine:
         required if the worker is to perform async forward pass to next step.
         """
         for seq_group_metadata, sequence_group_outputs, scheduled_seq_group in \
-            zip(seq_group_metadata_list, output, scheduled_seq_groups):
+                zip(seq_group_metadata_list, output, scheduled_seq_groups):
             seq_group = scheduled_seq_group.seq_group
 
             if seq_group.is_finished():
@@ -1583,7 +1586,6 @@ class LLMEngine:
                 sequences will be ignored.
         """
         now = time.time()
-        
 
         # System State
         #   Scheduler State
@@ -1603,7 +1605,8 @@ class LLMEngine:
                     scheduler.block_manager.get_num_free_gpu_blocks()
                     for scheduler in self.scheduler)
             else:
-                num_free_gpu = self.scheduler[0].block_manager.get_num_free_gpu_blocks()
+                num_free_gpu = self.scheduler[0].block_manager.get_num_free_gpu_blocks(
+                )
             gpu_cache_usage_sys = 1.0 - (num_free_gpu / num_total_gpu)
 
         num_total_cpu = self.cache_config.num_cpu_blocks
@@ -1614,7 +1617,8 @@ class LLMEngine:
                     scheduler.block_manager.get_num_free_cpu_blocks()
                     for scheduler in self.scheduler)
             else:
-                num_free_cpu = self.scheduler[0].block_manager.get_num_free_cpu_blocks()
+                num_free_cpu = self.scheduler[0].block_manager.get_num_free_cpu_blocks(
+                )
             cpu_cache_usage_sys = 1.0 - (num_free_cpu / num_total_cpu)
 
         # Prefix Cache Hit Rate. Note that we always use
@@ -1653,7 +1657,7 @@ class LLMEngine:
         actual_num_batched_tokens = None
         stage_info: List[dict] = []
         exec_latency = None
-        
+
         if model_output:
             stage_info = model_output[0].stage_info
             exec_latency = model_output[0].latency
@@ -1843,8 +1847,7 @@ class LLMEngine:
             #   Metadata
             num_prompt_tokens_requests=num_prompt_tokens_requests,
             num_generation_tokens_requests=num_generation_tokens_requests,
-            max_num_generation_tokens_requests=
-            max_num_generation_tokens_requests,
+            max_num_generation_tokens_requests=max_num_generation_tokens_requests,
             n_requests=n_requests,
             max_tokens_requests=max_tokens_requests,
             finished_reason_requests=finished_reason_requests,

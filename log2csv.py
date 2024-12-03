@@ -53,12 +53,11 @@ def main(filename):
             result["tpot"] = tpot
             result["batch_size"] = batch_size
             result_dict.append(result)
-            if generation_throughput != 0:
-                throughputs.append(generation_throughput)
-                tokens.append(generation_throughput * tpot)
             if tpot != 0:
                 latencies.append(tpot)
                 batch_sizes.append(batch_size)
+                throughputs.append(generation_throughput)
+                tokens.append(generation_throughput * tpot)
         elif "schedule prefills" in line or "schedule recomputes" in line:
             result = {}
             time_str = line.split(" ")[2]
