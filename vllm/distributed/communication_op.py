@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union
 import torch
 import torch.distributed
 
-from .parallel_state import get_tp_group
+from .parallel_state import GroupCoordinator, get_tp_group
 
 
 def tensor_model_parallel_all_reduce(input_: torch.Tensor) -> torch.Tensor:
@@ -28,7 +28,10 @@ def tensor_model_parallel_gather(input_: torch.Tensor,
 
 def broadcast_tensor_dict(tensor_dict: Optional[Dict[Any, Union[torch.Tensor,
                                                                 Any]]] = None,
-                          src: int = 0):
+                          src: int = 0,
+                          group: Optional[GroupCoordinator] = None):
     if not torch.distributed.is_initialized():
         return tensor_dict
-    return get_tp_group().broadcast_tensor_dict(tensor_dict, src)
+    if group is None:
+        group = get_tp_group()
+    return group.broadcast_tensor_dict(tensor_dict, src)

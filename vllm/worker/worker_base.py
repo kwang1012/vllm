@@ -309,8 +309,8 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[Tuple[BroadcastableModelInput, WorkerInput, Dict[
             str, torch.Tensor]]]:
         """ Get the worker input from the broadcasted tensor dict. """
-        assert self.do_metadata_broadcast
-        assert not self.is_driver_worker
+        # assert self.do_metadata_broadcast
+        # assert not self.is_driver_worker
         broadcast_data = broadcast_tensor_dict(src=0)
         if not broadcast_data:
             return None
@@ -328,7 +328,7 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         self, execute_model_req: ExecuteModelRequest
     ) -> Tuple[BroadcastableModelInput, WorkerInput, Dict[str, torch.Tensor]]:
         """ Get the driver input and broadcast it to other workers.  """
-        assert self.is_driver_worker
+        # assert self.is_driver_worker
 
         worker_input: WorkerInput = self.prepare_worker_input(
             execute_model_req=execute_model_req)
@@ -361,19 +361,23 @@ class LocalOrDistributedWorkerBase(WorkerBase):
         """
         Prepare the inputs to ModelRunner and workers.
         """
-        if self.is_driver_worker:
-            if execute_model_req is None:
-                if self.do_metadata_broadcast:
-                    # This signals that there's no more requests to process for
-                    # now. All workers are running infinite loop with
-                    # broadcast_tensor_dict, and it stops the loop when the
-                    # driver broadcasts an empty input. Send an empty input to
-                    # notify all other workers to stop their execution loop.
-                    broadcast_tensor_dict({}, src=0)
-                return None
+        if get_pp_group().is_first_rank:
             return self._get_driver_input_and_broadcast(execute_model_req)
         else:
             return self._get_worker_input_from_broadcast()
+        # if self.is_driver_worker:
+        #     if execute_model_req is None:
+        #         if self.do_metadata_broadcast:
+        #             # This signals that there's no more requests to process for
+        #             # now. All workers are running infinite loop with
+        #             # broadcast_tensor_dict, and it stops the loop when the
+        #             # driver broadcasts an empty input. Send an empty input to
+        #             # notify all other workers to stop their execution loop.
+        #             broadcast_tensor_dict({}, src=0, group=get_pp_group())
+        #         return None
+        #     return self._get_driver_input_and_broadcast(execute_model_req)
+        # else:
+        #     return self._get_worker_input_from_broadcast()
 
     def get_model(self) -> nn.Module:
         return self.model_runner.get_model()
@@ -384,9 +388,11 @@ class LocalOrDistributedWorkerBase(WorkerBase):
     ) -> Optional[List[SamplerOutput]]:
         """Executes at least one model step on the given sequences, unless no
         sequences are provided."""
+        print(get_pp_group().rank, "Execute model")
         start_time = time.perf_counter()
 
         inputs = self.prepare_input(execute_model_req)
+        # print(get_pp_group().rank, "inputs", inputs)
         if inputs is None:
             return None
 

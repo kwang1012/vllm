@@ -63,10 +63,10 @@ class EngineCore:
             cache_config=vllm_config.cache_config,
             lora_config=vllm_config.lora_config,
             log_stats=self.log_stats,
-        )for _ in range(2)]
+        ) for _ in range(self.model_executor.parallel_config.pipeline_parallel_size)]
         self.add_req_batch = 0
         self.step_batch = 0
-        self.schedule_output = [None for _ in range(2)]
+        self.schedule_output = [None for _ in range(self.model_executor.parallel_config.pipeline_parallel_size)]
 
         self.mm_input_mapper_server = MMInputMapperServer(
             vllm_config.model_config)
@@ -123,7 +123,7 @@ class EngineCore:
 
         self.scheduler[self.add_req_batch].add_request(req)
         self.add_req_batch += 1
-        self.add_req_batch %= 2
+        self.add_req_batch %= self.model_executor.parallel_config.pipeline_parallel_size
 
     def abort_requests(self, request_ids: List[str]):
         """Abort requests from the scheduler."""
@@ -141,13 +141,19 @@ class EngineCore:
             return EngineCoreOutputs(
                 outputs=[], scheduler_stats=self.scheduler[self.step_batch].make_stats())
 
+        scheduler_outputs = []
+
         scheduler_output = self.scheduler[self.step_batch].schedule()
         self.schedule_output[self.step_batch] = scheduler_output
-        print(scheduler_output.scheduled_new_reqs, scheduler_output.scheduled_cached_reqs)
-        output = self.model_executor.execute_model(scheduler_output)
+        
+        for i in range(self.model_executor.parallel_config.pipeline_parallel_size):
+            b = (self.step_batch - i) % self.model_executor.parallel_config.pipeline_parallel_size
+            scheduler_outputs.append(self.schedule_output[b])
+        
+        output = self.model_executor.execute_model(scheduler_outputs)
+
         self.step_batch += 1
-        self.step_batch %= 2
-        print(f"Batch {self.step_batch} output {output}")
+        self.step_batch %= self.model_executor.parallel_config.pipeline_parallel_size
         if not output:
             return EngineCoreOutputs(
                 outputs=[], scheduler_stats=self.scheduler[self.step_batch].make_stats())

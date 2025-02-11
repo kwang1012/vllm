@@ -61,6 +61,8 @@ class Worker:
         self.rank = rank
         self.distributed_init_method = distributed_init_method
         self.output_queue = output_queue
+        self.warmup = self.rank - 1
+        self._next_intermediate_tensors = None
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
@@ -224,8 +226,8 @@ class Worker:
         for size in sorted(warmup_sizes, reverse=True):
             logger.info("Compile and warming up model for size %d", size)
             self.model_runner._dummy_run(size)
-        if not self.model_config.enforce_eager:
-            self.model_runner.capture_model()
+        # if not self.model_config.enforce_eager:
+        #     self.model_runner.capture_model()
         # Reset the seed to ensure that the random state is not affected by
         # the model initialization and profiling.
         set_random_seed(self.model_config.seed)
@@ -236,18 +238,22 @@ class Worker:
     @torch.inference_mode()
     def execute_model(
         self,
-        scheduler_output: "SchedulerOutput",
+        scheduler_outputs: List["SchedulerOutput"],
     ) -> Optional[ModelRunnerOutput]:
+        scheduler_output = scheduler_outputs[self.rank]
+        next_intermediate_tensors = self._next_intermediate_tensors
         intermediate_tensors = None
-        if not get_pp_group().is_first_rank:
+        if not get_pp_group().is_first_rank and self.warmup <= 0:
             intermediate_tensors = IntermediateTensors(get_pp_group().recv_tensor_dict())
-        output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)
+            self._next_intermediate_tensors = intermediate_tensors
+        self.warmup -= 1
+        if scheduler_output is None:
+            return None
+        output = self.model_runner.execute_model(scheduler_output, next_intermediate_tensors)
         if not get_pp_group().is_last_rank:
             get_pp_group().send_tensor_dict(output.tensors)
-            return
         
-        self.output_queue.put(output)
-        # return output if self.rank == 0 else None
+        return output
 
     def profile(self, is_start: bool = True):
         if self.profiler is None:

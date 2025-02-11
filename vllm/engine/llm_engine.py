@@ -434,6 +434,8 @@ class LLMEngine:
     @classmethod
     def _get_executor_cls(cls,
                           engine_config: VllmConfig) -> Type[ExecutorBase]:
+        from vllm.executor.mp_pp_executor import MultiprocessingPPExecutor
+        return MultiprocessingPPExecutor
         # distributed_executor_backend must be set in VllmConfig.__post_init__
         distributed_executor_backend = (
             engine_config.parallel_config.distributed_executor_backend)
@@ -1305,6 +1307,36 @@ class LLMEngine:
             >>>     if not (engine.has_unfinished_requests() or example_inputs):
             >>>         break
         """
+
+        (seq_group_metadata_list, scheduler_outputs,
+            allow_async_output_proc
+            ) = self.scheduler[0].schedule()
+
+        finished_requests_ids = self.scheduler[
+            0].get_and_reset_finished_requests_ids()
+        
+        last_sampled_token_ids = \
+            self._get_last_sampled_token_ids(0)
+        
+        execute_model_req = ExecuteModelRequest(
+            seq_group_metadata_list=seq_group_metadata_list,
+            blocks_to_swap_in=scheduler_outputs.blocks_to_swap_in,
+            blocks_to_swap_out=scheduler_outputs.blocks_to_swap_out,
+            blocks_to_copy=scheduler_outputs.blocks_to_copy,
+            num_lookahead_slots=scheduler_outputs.num_lookahead_slots,
+            running_queue_size=scheduler_outputs.running_queue_size,
+            finished_requests_ids=finished_requests_ids,
+            # We use ExecuteModelRequest to pass the last sampled_token_ids
+            # to each of the non-last PP stages for in-place prepare_input.
+            last_sampled_token_ids=last_sampled_token_ids)
+
+        if allow_async_output_proc:
+            execute_model_req.async_callback = self.async_callbacks[0]
+
+        outputs = self.model_executor.execute_model(
+            execute_model_req=execute_model_req)
+
+        return outputs
         if self.parallel_config.pipeline_parallel_size > 1:
             raise NotImplementedError(
                 "Pipeline parallelism is only supported through AsyncLLMEngine "

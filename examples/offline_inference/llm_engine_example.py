@@ -36,6 +36,8 @@ def process_requests(engine: LLMEngine,
 
         request_outputs: List[RequestOutput] = engine.step()
 
+        print(request_outputs)
+        return
         for request_output in request_outputs:
             if request_output.finished:
                 print(request_output)

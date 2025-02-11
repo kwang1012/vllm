@@ -8,6 +8,7 @@ from vllm.distributed.parallel_state import destroy_model_parallel
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.engine.async_llm_engine import AsyncLLMEngine
 from vllm.utils import FlexibleArgumentParser, random_uuid
+from torch.profiler import profile, ProfilerActivity
 
 async def main(args):
     # Sample prompts.
@@ -42,8 +43,13 @@ async def main(args):
         return await asyncio.gather(
             *[run(prompt) for prompt in prompts]
         )
+    # with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA], record_shapes=True) as prof:
+    #     await engine.start_profile()
     outputs = await generate()
     pbar.close()
+    #     await engine.stop_profile()
+    # prof.export_chrome_trace("trace.json")
+    # print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=10))
 
     avg_generated_text_len = []
     for output in outputs:

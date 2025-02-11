@@ -467,7 +467,8 @@ class LLM:
             priority=priority)
 
         outputs = self._run_engine(use_tqdm=use_tqdm)
-        return self.engine_class.validate_outputs(outputs, RequestOutput)
+        return outputs
+        # return self.engine_class.validate_outputs(outputs, RequestOutput)
 
     def collective_rpc(self,
                        method: Union[str, Callable[..., _R]],
@@ -1372,6 +1373,10 @@ class LLM:
             self, *, use_tqdm: bool
     ) -> List[Union[RequestOutput, PoolingRequestOutput]]:
         # Initialize tqdm.
+
+        step_outputs = self.llm_engine.step()
+        return 
+    
         if use_tqdm:
             num_requests = self.llm_engine.get_num_unfinished_requests()
             pbar = tqdm(

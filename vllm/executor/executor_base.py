@@ -269,8 +269,7 @@ class DistributedExecutorBase(ExecutorBase):
         # TODO: unify into collective_rpc
         if self.parallel_worker_tasks is None:
             self.parallel_worker_tasks = self._run_workers(
-                "start_worker_execution_loop",
-                async_run_tensor_parallel_workers_only=True)
+                "start_worker_execution_loop")
 
         # Only the driver worker returns the sampling results.
         driver_outputs = self._driver_execute_model(execute_model_req)

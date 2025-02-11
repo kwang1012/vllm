@@ -27,6 +27,7 @@ from vllm.executor.multiproc_worker_utils import (
 from vllm.logger import init_logger
 from vllm.utils import (get_distributed_init_method, get_mp_context,
                         get_open_port, get_open_zmq_ipc_path, zmq_socket_ctx)
+from vllm.v1.core.scheduler_output import SchedulerOutput
 from vllm.v1.executor.abstract import Executor
 from vllm.v1.outputs import ModelRunnerOutput
 from vllm.worker.worker_base import WorkerWrapperBase
@@ -140,23 +141,10 @@ class MultiprocExecutor(Executor):
     
     def execute_model(
         self,
-        scheduler_output,
+        scheduler_outputs: List[SchedulerOutput],
     ) -> ModelRunnerOutput:
-        method = "execute_model"
-        try:
-            if isinstance(method, str):
-                send_method = method
-            else:
-                send_method = cloudpickle.dumps(
-                    method, protocol=pickle.HIGHEST_PROTOCOL)
-            self.rpc_broadcast_mq.enqueue((send_method, (scheduler_output, ), {}))
-        except TimeoutError as e:
-            raise TimeoutError(f"RPC call to {method} timed out.") from e
-        except Exception as e:
-            # Re-raise any other exceptions
-            raise e
-        output = self.output_queue.get()
-        return output
+        output = self.collective_rpc("execute_model", args=(scheduler_outputs,))
+        return output[-1]
 
     def _ensure_worker_termination(self):
         """Ensure that all worker processes are terminated. Assumes workers have
