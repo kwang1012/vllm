@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 from functools import partial
 from multiprocessing.process import BaseProcess
+import multiprocessing as mp
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import cloudpickle
@@ -27,6 +28,7 @@ from vllm.logger import init_logger
 from vllm.utils import (get_distributed_init_method, get_mp_context,
                         get_open_port, get_open_zmq_ipc_path, zmq_socket_ctx)
 from vllm.v1.executor.abstract import Executor
+from vllm.v1.outputs import ModelRunnerOutput
 from vllm.worker.worker_base import WorkerWrapperBase
 
 logger = init_logger(__name__)
@@ -38,6 +40,9 @@ POLLING_TIMEOUT_S = POLLING_TIMEOUT_MS // 1000
 class MultiprocExecutor(Executor):
 
     def _init_executor(self) -> None:
+        self.output_queue = mp.Queue()
+        for _ in range(self.parallel_config.pipeline_parallel_size - 1):
+            self.output_queue.put(None)
         # Call self.shutdown at exit to clean up
         # and ensure workers will be terminated.
         self._finalizer = weakref.finalize(self, self.shutdown)
@@ -57,10 +62,10 @@ class MultiprocExecutor(Executor):
 
         self.world_size = self.parallel_config.world_size
         tensor_parallel_size = self.parallel_config.tensor_parallel_size
-        assert self.world_size == tensor_parallel_size, (
-            f"world_size ({self.world_size}) must be equal to the "
-            f"tensor_parallel_size ({tensor_parallel_size}). "
-            f"Pipeline parallelism is not yet implemented in v1")
+        # assert self.world_size == tensor_parallel_size, (
+        #     f"world_size ({self.world_size}) must be equal to the "
+        #     f"tensor_parallel_size ({tensor_parallel_size}). "
+        #     f"Pipeline parallelism is not yet implemented in v1")
 
         # Set multiprocessing envs that are common to V0 and V1
         set_multiprocessing_worker_envs(self.parallel_config)
@@ -82,7 +87,8 @@ class MultiprocExecutor(Executor):
             worker = WorkerProc.make_worker_process(self.vllm_config, rank,
                                                     rank,
                                                     distributed_init_method,
-                                                    scheduler_output_handle)
+                                                    scheduler_output_handle,
+                                                    self.output_queue)
             self.workers.append(worker)
 
         # Ensure message queues are ready. Will deadlock if re-ordered
@@ -131,6 +137,26 @@ class MultiprocExecutor(Executor):
         except Exception as e:
             # Re-raise any other exceptions
             raise e
+    
+    def execute_model(
+        self,
+        scheduler_output,
+    ) -> ModelRunnerOutput:
+        method = "execute_model"
+        try:
+            if isinstance(method, str):
+                send_method = method
+            else:
+                send_method = cloudpickle.dumps(
+                    method, protocol=pickle.HIGHEST_PROTOCOL)
+            self.rpc_broadcast_mq.enqueue((send_method, (scheduler_output, ), {}))
+        except TimeoutError as e:
+            raise TimeoutError(f"RPC call to {method} timed out.") from e
+        except Exception as e:
+            # Re-raise any other exceptions
+            raise e
+        output = self.output_queue.get()
+        return output
 
     def _ensure_worker_termination(self):
         """Ensure that all worker processes are terminated. Assumes workers have
@@ -204,6 +230,7 @@ class WorkerProc:
         distributed_init_method: str,
         input_shm_handle: Handle,
         ready_path: str,
+        output_queue: mp.Queue,
     ):
         self.rank = rank
         wrapper = WorkerWrapperBase(vllm_config=vllm_config, rpc_rank=rank)
@@ -216,6 +243,7 @@ class WorkerProc:
             "local_rank": local_rank,
             "rank": rank,
             "distributed_init_method": distributed_init_method,
+            "output_queue": output_queue,
         }
         wrapper.init_worker(all_kwargs)
         self.worker = wrapper.worker
@@ -249,6 +277,7 @@ class WorkerProc:
             rank: int,
             distributed_init_method: str,
             input_shm_handle,  # Receive SchedulerOutput
+            output_queue: mp.Queue
     ) -> WorkerProcHandle:
         context = get_mp_context()
 
@@ -263,6 +292,7 @@ class WorkerProc:
             "distributed_init_method": distributed_init_method,
             "input_shm_handle": input_shm_handle,
             "ready_path": ready_path,
+            "output_queue": output_queue,
         }
         # Run EngineCore busy loop in background process.
         proc = context.Process(target=WorkerProc.worker_main,

@@ -4,6 +4,7 @@ import asyncio
 from abc import ABC, abstractmethod
 from typing import (Any, Awaitable, Callable, Dict, List, Optional, Set, Tuple,
                     Union)
+import multiprocessing as mp
 
 import torch.nn as nn
 from typing_extensions import TypeVar

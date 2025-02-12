@@ -41,7 +41,7 @@ class Scheduler:
             self.scheduler_config.max_num_batched_tokens
         self.max_model_len = self.scheduler_config.max_model_len
 
-        num_gpu_blocks = cache_config.num_gpu_blocks
+        num_gpu_blocks = cache_config.num_gpu_blocks // 2
         assert isinstance(num_gpu_blocks, int) and num_gpu_blocks > 0
         # Create the KV cache manager.
         self.kv_cache_manager = KVCacheManager(

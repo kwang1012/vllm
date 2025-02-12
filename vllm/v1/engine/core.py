@@ -57,13 +57,16 @@ class EngineCore:
         vllm_config.cache_config.num_cpu_blocks = num_cpu_blocks
 
         # Setup scheduler.
-        self.scheduler = Scheduler(
+        self.scheduler = [Scheduler(
             scheduler_config=vllm_config.scheduler_config,
             model_config=vllm_config.model_config,
             cache_config=vllm_config.cache_config,
             lora_config=vllm_config.lora_config,
             log_stats=self.log_stats,
-        )
+        )for _ in range(2)]
+        self.add_req_batch = 0
+        self.step_batch = 0
+        self.schedule_output = [None for _ in range(2)]
 
         self.mm_input_mapper_server = MMInputMapperServer(
             vllm_config.model_config)
@@ -118,7 +121,9 @@ class EngineCore:
 
         req = Request.from_engine_core_request(request)
 
-        self.scheduler.add_request(req)
+        self.scheduler[self.add_req_batch].add_request(req)
+        self.add_req_batch += 1
+        self.add_req_batch %= 2
 
     def abort_requests(self, request_ids: List[str]):
         """Abort requests from the scheduler."""
@@ -132,14 +137,22 @@ class EngineCore:
     def step(self) -> EngineCoreOutputs:
         """Schedule, execute, and make output."""
 
-        if not self.scheduler.has_unfinished_requests():
+        if not self.scheduler[self.step_batch].has_unfinished_requests():
             return EngineCoreOutputs(
-                outputs=[], scheduler_stats=self.scheduler.make_stats())
+                outputs=[], scheduler_stats=self.scheduler[self.step_batch].make_stats())
 
-        scheduler_output = self.scheduler.schedule()
+        scheduler_output = self.scheduler[self.step_batch].schedule()
+        self.schedule_output[self.step_batch] = scheduler_output
+        print(scheduler_output.scheduled_new_reqs, scheduler_output.scheduled_cached_reqs)
         output = self.model_executor.execute_model(scheduler_output)
-        engine_core_outputs = self.scheduler.update_from_output(
-            scheduler_output, output)
+        self.step_batch += 1
+        self.step_batch %= 2
+        print(f"Batch {self.step_batch} output {output}")
+        if not output:
+            return EngineCoreOutputs(
+                outputs=[], scheduler_stats=self.scheduler[self.step_batch].make_stats())
+        engine_core_outputs = self.scheduler[self.step_batch].update_from_output(
+            self.schedule_output[self.step_batch], output)
         return engine_core_outputs
 
     def shutdown(self):
@@ -230,7 +243,7 @@ class EngineCoreProc(EngineCore):
         # Loop until process is sent a SIGINT or SIGTERM
         while True:
             # 1) Poll the input queue until there is work to do.
-            if not self.scheduler.has_unfinished_requests():
+            if not any(self.scheduler[b].has_unfinished_requests() for b in range(2)):
                 while True:
                     try:
                         req = self.input_queue.get(timeout=POLLING_TIMEOUT_S)
@@ -251,7 +264,7 @@ class EngineCoreProc(EngineCore):
 
             # 3) Step the engine core.
             outputs = self.step()
-
+            
             # 5) Put EngineCoreOutputs into the output queue.
             self.output_queue.put_nowait(outputs)
 

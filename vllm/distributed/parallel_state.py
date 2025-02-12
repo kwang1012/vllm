@@ -524,26 +524,11 @@ class GroupCoordinator:
         assert dst != self.rank_in_group, (
             "Invalid destination rank. Destination rank is the same "
             "as the current rank.")
-
-        # Serialize object to tensor and get the size as well
-        object_tensor = torch.frombuffer(pickle.dumps(obj), dtype=torch.uint8)
-
-        size_tensor = torch.tensor([object_tensor.numel()],
-                                   dtype=torch.long,
-                                   device="cpu")
-
-        # Send object size
-
-        torch.distributed.send(size_tensor,
-                               dst=self.ranks[dst],
-                               group=self.cpu_group)
-
-        # Send object
-        torch.distributed.send(object_tensor,
-                               dst=self.ranks[dst],
-                               group=self.cpu_group)
-
-        return None
+        
+        torch.distributed.send_object_list([obj],
+                                                dst=self.ranks[dst],
+                                                group=self.cpu_group)
+        return obj
 
     def recv_object(self, src: int) -> Any:
         """Receive the input object list from the source rank."""
@@ -554,30 +539,12 @@ class GroupCoordinator:
         assert src != self.rank_in_group, (
             "Invalid source rank. Source rank is the same as the current rank."
         )
-
-        size_tensor = torch.empty(1, dtype=torch.long, device="cpu")
-
-        # Receive object size
-        rank_size = torch.distributed.recv(size_tensor,
-                                           src=self.ranks[src],
-                                           group=self.cpu_group)
-
-        # Tensor to receive serialized objects into.
-        object_tensor = torch.empty(  # type: ignore[call-overload]
-            size_tensor.item(),  # type: ignore[arg-type]
-            dtype=torch.uint8,
-            device="cpu")
-
-        rank_object = torch.distributed.recv(object_tensor,
-                                             src=self.ranks[src],
-                                             group=self.cpu_group)
-
-        assert rank_object == rank_size, (
-            "Received object sender rank does not match the size sender rank.")
-
-        obj = pickle.loads(object_tensor.numpy().tobytes())
-
-        return obj
+        
+        recv = [None]
+        torch.distributed.recv_object_list(recv,
+                                                src=self.ranks[src],
+                                                group=self.cpu_group)
+        return recv[0]
 
     def broadcast_tensor_dict(
         self,

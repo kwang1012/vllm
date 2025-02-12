@@ -3,11 +3,13 @@
 import gc
 import os
 from typing import TYPE_CHECKING, List, Optional
+import multiprocessing as mp
 
 import torch
 import torch.distributed
 import torch.nn as nn
 
+from vllm.distributed.parallel_state import get_pp_group
 import vllm.envs as envs
 from vllm.config import ParallelConfig, VllmConfig
 from vllm.device_allocator.cumem import CuMemAllocator
@@ -17,6 +19,7 @@ from vllm.distributed import (ensure_model_parallel_initialized,
 from vllm.logger import init_logger
 from vllm.model_executor import set_random_seed
 from vllm.platforms import current_platform
+from vllm.sequence import IntermediateTensors
 from vllm.utils import GiB_bytes
 from vllm.v1.kv_cache_interface import KVCacheConfig, KVCacheSpec
 from vllm.v1.outputs import ModelRunnerOutput
@@ -37,6 +40,7 @@ class Worker:
         rank: int,
         distributed_init_method: str,
         is_driver_worker: bool = False,
+        output_queue: Optional[mp.Queue] = None
     ):
 
         # TODO: use WorkerBase.__init__(self, vllm_config=vllm_config)
@@ -56,6 +60,7 @@ class Worker:
         self.local_rank = local_rank
         self.rank = rank
         self.distributed_init_method = distributed_init_method
+        self.output_queue = output_queue
 
         if self.model_config.trust_remote_code:
             # note: lazy import to avoid importing torch before initializing
@@ -233,8 +238,16 @@ class Worker:
         self,
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
-        output = self.model_runner.execute_model(scheduler_output)
-        return output if self.rank == 0 else None
+        intermediate_tensors = None
+        if not get_pp_group().is_first_rank:
+            intermediate_tensors = IntermediateTensors(get_pp_group().recv_tensor_dict())
+        output = self.model_runner.execute_model(scheduler_output, intermediate_tensors)
+        if not get_pp_group().is_last_rank:
+            get_pp_group().send_tensor_dict(output.tensors)
+            return
+        
+        self.output_queue.put(output)
+        # return output if self.rank == 0 else None
 
     def profile(self, is_start: bool = True):
         if self.profiler is None:
