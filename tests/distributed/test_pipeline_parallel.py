@@ -335,6 +335,7 @@ def _compare_tp(
         # terminate because of a Ray Compiled Graph issue.
         common_args.append("--disable-frontend-multiprocessing")
     elif distributed_backend == "mp":
+        # Both V0/V1 of multiprocessing executor support PP
         pp_env = {
             "VLLM_USE_V1": vllm_major_version,
         }
