@@ -116,6 +116,27 @@ class MultiprocExecutor(Executor):
                      args: tuple = (),
                      kwargs: Optional[dict] = None,
                      non_block: bool = False) -> list[Any]:
+        """Run the method on workers of all ranks and get their responses.
+
+        Args:
+            method: Name of the worker method to execute, or a callable that
+                is serialized and sent to all workers to execute.
+
+                If the method is a callable, it should accept an additional
+                `self` argument, in addition to the arguments passed in `args`
+                and `kwargs`. The `self` argument will be the worker object.
+            timeout: Maximum time in seconds to wait for execution. Raises a
+                :exc:`TimeoutError` on timeout. `None` means wait indefinitely.
+            args: Positional arguments to pass to the worker method.
+            kwargs: Keyword arguments to pass to the worker method.
+            non_block: when non_block=True, this function immediately 
+            returns future objects to unblock pipeline.
+        
+        Return:
+            A list of responses from workers of all ranks. The response will be
+            future objects if non_block=True.
+        """
+
         start_time = time.monotonic()
         kwargs = kwargs or {}
 
