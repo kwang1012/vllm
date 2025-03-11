@@ -129,7 +129,7 @@ class MultiprocExecutor(Executor):
                 :exc:`TimeoutError` on timeout. `None` means wait indefinitely.
             args: Positional arguments to pass to the worker method.
             kwargs: Keyword arguments to pass to the worker method.
-            non_block: when non_block=True, this function immediately 
+            non_block: When non_block=True, this function immediately 
             returns future objects to unblock pipeline.
         
         Return:
