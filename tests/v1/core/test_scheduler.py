@@ -2,8 +2,9 @@
 from typing import Optional
 
 import pytest
+import math
 
-from vllm.config import CacheConfig, ModelConfig, SchedulerConfig, VllmConfig
+from vllm.config import CacheConfig, ModelConfig, ParallelConfig, SchedulerConfig, VllmConfig, DeviceConfig
 from vllm.multimodal.inputs import MultiModalKwargs, PlaceholderRange
 from vllm.sampling_params import SamplingParams
 from vllm.v1.core.scheduler import Scheduler, SchedulerOutput
@@ -19,6 +20,7 @@ def create_scheduler(
     max_num_seqs: int = 16,
     max_num_batched_tokens: int = 8192,
     enable_prefix_caching: Optional[bool] = None,
+    pipeline_parallel_size: int = 1,
 ) -> Scheduler:
     '''Create scheduler under test.
     
@@ -47,6 +49,9 @@ def create_scheduler(
         dtype="float16",
         seed=42,
     )
+    parallel_config = ParallelConfig(
+        pipeline_parallel_size=pipeline_parallel_size,
+    )
     # Cache config, optionally force APC
     kwargs_cache = ({} if enable_prefix_caching is None else {
         'enable_prefix_caching': enable_prefix_caching
@@ -58,15 +63,18 @@ def create_scheduler(
         cache_dtype="auto",
         **kwargs_cache,
     )
+    device_config = DeviceConfig("cpu")
     vllm_config = VllmConfig(
         scheduler_config=scheduler_config,
         model_config=model_config,
         cache_config=cache_config,
+        device_config=device_config
     )
     cache_config.num_gpu_blocks = 10000
     return Scheduler(
         scheduler_config,
         model_config,
+        parallel_config,
         cache_config,
         speculative_config=None,
         lora_config=None,
@@ -515,3 +523,98 @@ def test_schedule_concurrent_batches(enable_prefix_caching: Optional[bool],
         prompt_logprobs_dict={},
     )
     scheduler.update_from_output(scheduler_output1, model_runner_output)
+
+
+@pytest.mark.parametrize("pipeline_parallel_size, num_requests, num_tokens", [
+    # (4, 16),
+    # (4, 9),
+    (2, 32, 16)
+])
+def test_schedule_balance_concurrent_batches(pipeline_parallel_size: int, num_requests: int, num_tokens: int):
+    scheduler = create_scheduler(
+        max_num_batched_tokens=1024,
+        max_num_seqs=128,
+        pipeline_parallel_size=pipeline_parallel_size,
+    )
+    requests = create_requests(
+        num_requests=num_requests,
+        num_tokens=num_tokens,
+    )
+
+    # add requets by (1, ..., n-pp_size-1)
+    added_req_index = 0
+    scheduler_outputs = []
+    batch_requests = []
+    for rank in range(pipeline_parallel_size):
+        if rank != pipeline_parallel_size - 1:
+            # add 1 request and schedule
+            scheduler.add_request(requests[added_req_index])
+            batch_requests.append({requests[added_req_index].request_id: added_req_index})
+            scheduler_output = scheduler.schedule()
+            scheduler_outputs.append(scheduler_output)
+            assert len(scheduler_output.scheduled_new_reqs) == 1
+            assert scheduler_output.num_scheduled_tokens[
+                requests[added_req_index].request_id] == num_tokens
+            added_req_index += 1
+        else:
+            # add rest requests
+            for request in requests[added_req_index:]:
+                scheduler.add_request(request)
+                
+            batch_requests.append({req.request_id: added_req_index + i for i, req in enumerate(requests[added_req_index:])})
+            scheduler_output = scheduler.schedule()
+            scheduler_outputs.append(scheduler_output)
+            assert len(scheduler_output.scheduled_new_reqs) == math.ceil(num_requests / pipeline_parallel_size)
+            assert sum(scheduler_output.num_scheduled_tokens.values()) == num_tokens * math.ceil(num_requests / pipeline_parallel_size)
+            added_req_index += len(requests[added_req_index:])
+            
+            
+    # test stable
+    for rank in range(pipeline_parallel_size):
+        
+        model_runner_output = ModelRunnerOutput(
+            req_ids=[request_id for request_id in batch_requests[rank]],
+            req_id_to_index=batch_requests[rank],
+            sampled_token_ids=[[0]] * len(batch_requests[rank]),
+            spec_token_ids=None,
+            logprobs=None,
+            prompt_logprobs_dict={},
+        )
+        scheduler.update_from_output(scheduler_outputs[rank], model_runner_output)
+        
+        # reschedule
+        scheduler_output = scheduler.schedule()
+        scheduler_outputs[rank] = scheduler_output
+        if rank != pipeline_parallel_size - 1:
+            assert len(scheduler_output.scheduled_new_reqs) == num_requests // pipeline_parallel_size - 1
+            assert len(scheduler_output.scheduled_cached_reqs) == 1
+            assert sum(scheduler_output.num_scheduled_tokens.values()) == 1 + (num_requests // pipeline_parallel_size - 1) * num_tokens
+        else:
+            assert len(scheduler_output.scheduled_new_reqs) == 0
+            assert len(scheduler_output.scheduled_cached_reqs) == num_requests // pipeline_parallel_size
+            assert sum(scheduler_output.num_scheduled_tokens.values()) == num_requests // pipeline_parallel_size
+        
+    # test rebalance
+    # EOS_TOKEN_ID
+    # for rank in range(pipeline_parallel_size):
+    #     model_runner_output = ModelRunnerOutput(
+    #         req_ids=[request_id for request_id in batch_requests[rank]],
+    #         req_id_to_index=batch_requests[rank],
+    #         sampled_token_ids=[[EOS_TOKEN_ID]] * len(batch_requests[rank]),
+    #         spec_token_ids=None,
+    #         logprobs=None,
+    #         prompt_logprobs_dict={},
+    #     )
+    #     scheduler.update_from_output(scheduler_outputs[rank], model_runner_output)
+        
+        # # reschedule
+        # scheduler_output = scheduler.schedule()
+        # scheduler_outputs[rank] = scheduler_output
+        # if rank != pipeline_parallel_size - 1:
+        #     assert len(scheduler_output.scheduled_new_reqs) == 0
+        #     assert len(scheduler_output.scheduled_cached_reqs) == 1
+        #     assert sum(scheduler_output.num_scheduled_tokens.values()) == 0 + num_tokens
+        # else:
+        #     assert len(scheduler_output.scheduled_new_reqs) == 0
+        #     assert len(scheduler_output.scheduled_cached_reqs) == 0
+        #     assert sum(scheduler_output.num_scheduled_tokens.values()) == 0
