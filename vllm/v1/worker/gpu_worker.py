@@ -2,6 +2,7 @@
 """A GPU worker class."""
 import gc
 import os
+import time
 from typing import TYPE_CHECKING, Optional
 
 import torch
@@ -62,7 +63,7 @@ class Worker(WorkerBase):
                         torch_profiler_trace_dir)
             self.profiler = torch.profiler.profile(
                 activities=[
-                    torch.profiler.ProfilerActivity.CPU,
+                    # torch.profiler.ProfilerActivity.CPU,
                     torch.profiler.ProfilerActivity.CUDA,
                 ],
                 with_stack=True,
@@ -231,9 +232,11 @@ class Worker(WorkerBase):
                 get_pp_group().recv_tensor_dict(
                     all_gather_group=get_tp_group()))
 
+        # start_time = time.perf_counter()
         output = self.model_runner.execute_model(scheduler_output,
                                                  intermediate_tensors)
 
+        # logger.info("Rank: %d, Execution start time: %f, Execution end time: %f", self.rank, start_time, time.perf_counter())
         if not get_pp_group().is_last_rank:
             assert isinstance(output, IntermediateTensors)
             get_pp_group().send_tensor_dict(output.tensors,
