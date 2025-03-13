@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import time
+import math
 from collections import deque
 from collections.abc import Iterable
 from typing import Optional, Union
 
-from vllm.config import (CacheConfig, LoRAConfig, ModelConfig, SchedulerConfig,
+from vllm.config import (CacheConfig, LoRAConfig, ModelConfig, ParallelConfig, SchedulerConfig,
                          SpeculativeConfig)
 from vllm.logger import init_logger
 from vllm.v1.core.encoder_cache_manager import (EncoderCacheManager,
@@ -31,6 +32,7 @@ class Scheduler:
         self,
         scheduler_config: SchedulerConfig,
         model_config: ModelConfig,
+        parallel_config: ParallelConfig,
         cache_config: CacheConfig,
         lora_config: Optional[LoRAConfig],
         speculative_config: Optional[SpeculativeConfig],
@@ -39,6 +41,7 @@ class Scheduler:
     ) -> None:
         self.scheduler_config = scheduler_config
         self.cache_config = cache_config
+        self.parallel_config = parallel_config
         self.lora_config = lora_config
         self.speculative_config = speculative_config
         self.log_stats = log_stats
@@ -70,6 +73,10 @@ class Scheduler:
         # The requests that have been scheduled and are being executed
         # by the executor.
         self.scheduled_req_ids: set[str] = set()
+        # The num_scheduled_tokens of requests that have been scheduled and are being executed
+        # by the executor.
+        self.num_scheduled_tokens: dict[str, int] = {}
+        self.total_num_new_tokens: dict[str, int] = {}
 
         # The request IDs that are finished in between the previous and the
         # current steps. This is used to notify the workers about the finished
@@ -129,7 +136,17 @@ class Scheduler:
 
         req_to_new_block_ids: dict[str, list[int]] = {}
         num_scheduled_tokens: dict[str, int] = {}
-        token_budget = self.max_num_scheduled_tokens
+        # token_budget = self.max_num_scheduled_tokens
+        
+        # 1. Check number of scheduled tokens and total number of tokens
+        # num_scheduled_tokens = sum(self.num_scheduled_tokens.values())
+        num_total_new_tokens = sum(self.total_num_new_tokens.values())
+        # 2. Set token budget to num_total_tokens by pp_size
+        pp_size = self.parallel_config.pipeline_parallel_size
+        token_budget = min(math.ceil(num_total_new_tokens / pp_size), self.max_num_scheduled_tokens)
+        
+        print(f"{num_total_new_tokens=}, {token_budget=}")
+        
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
         encoder_budget = self.max_num_encoder_input_tokens
@@ -295,7 +312,9 @@ class Scheduler:
                     num_computed_tokens -= self.block_size
                     num_new_tokens = self.block_size
                     computed_blocks.pop()
-                num_new_tokens = min(num_new_tokens, token_budget)
+                    
+                # TODO: round up request
+                num_new_tokens = min(num_new_tokens, self.max_num_scheduled_tokens)
                 assert num_new_tokens > 0
 
                 # Schedule encoder inputs.
@@ -354,8 +373,9 @@ class Scheduler:
 
         # Check if the scheduling constraints are satisfied.
         total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
+        self.num_scheduled_tokens.update(num_scheduled_tokens)
         assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
-        assert token_budget >= 0
+        # assert token_budget >= 0
         assert len(self.running) <= self.max_num_running_reqs
         # Since some requests in the RUNNING queue may not be scheduled in
         # this step, the total number of scheduled requests can be smaller than
@@ -544,7 +564,7 @@ class Scheduler:
                 # The request was not scheduled in this step.
                 new_running.append(request)
                 continue
-
+            
             req_index = model_runner_output.req_id_to_index[req_id]
             generated_token_ids = sampled_token_ids[req_index]
             if req_id not in scheduler_output.scheduled_spec_decode_tokens:
@@ -605,7 +625,7 @@ class Scheduler:
                     if stopped:
                         self._free_request(request)
                         break
-
+                self.total_num_new_tokens[request.request_id] = request.num_tokens_with_spec - request.num_computed_tokens
                 # Extract sample logprobs if needed.
                 if request.sampling_params.logprobs is not None:
                     assert logprobs is not None
@@ -635,6 +655,7 @@ class Scheduler:
                         stop_reason=request.stop_reason,
                         events=request.take_events()))
 
+            self.num_scheduled_tokens.pop(request.request_id)
             self.scheduled_req_ids.remove(request.request_id)
             if not stopped:
                 new_running.append(request)
@@ -668,6 +689,7 @@ class Scheduler:
         self.waiting.append(request)
         self.requests[request.request_id] = request
         self.request_queued(request)
+        self.total_num_new_tokens[request.request_id] = request.num_tokens
 
     def finish_requests(
         self,
