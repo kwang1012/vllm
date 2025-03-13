@@ -40,6 +40,7 @@ class Scheduler:
         structured_output_manager: StructuredOutputManager,
     ) -> None:
         self.scheduler_config = scheduler_config
+        self.parallel_config = parallel_config
         self.cache_config = cache_config
         self.parallel_config = parallel_config
         self.lora_config = lora_config
@@ -75,7 +76,7 @@ class Scheduler:
         self.scheduled_req_ids: set[str] = set()
         # The num_scheduled_tokens of requests that have been scheduled and are being executed
         # by the executor.
-        self.num_scheduled_tokens: dict[str, int] = {}
+        # self.num_scheduled_tokens: dict[str, int] = {}
         self.total_num_new_tokens: dict[str, int] = {}
 
         # The request IDs that are finished in between the previous and the
@@ -121,6 +122,7 @@ class Scheduler:
         # chunked prefills, prefix caching, speculative decoding,
         # and the "jump decoding" optimization in the future.
 
+        self.parallel_config
         scheduled_new_reqs: list[Request] = []
         scheduled_resumed_reqs: list[Request] = []
         scheduled_running_reqs: list[Request] = []
@@ -145,8 +147,6 @@ class Scheduler:
         pp_size = self.parallel_config.pipeline_parallel_size
         token_budget = min(math.ceil(num_total_new_tokens / pp_size), self.max_num_scheduled_tokens)
         
-        print(f"{num_total_new_tokens=}, {token_budget=}")
-        
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
         encoder_budget = self.max_num_encoder_input_tokens
@@ -156,6 +156,9 @@ class Scheduler:
         # For logging.
         scheduled_timestamp = time.monotonic()
 
+        # for pp, try to balance the microbatch sizes
+        # self.parallel_config.pipeline_parallel_size
+        
         # First, schedule the RUNNING requests.
         req_index = 0
         while req_index < len(self.running) and token_budget > 0:
@@ -373,7 +376,7 @@ class Scheduler:
 
         # Check if the scheduling constraints are satisfied.
         total_num_scheduled_tokens = sum(num_scheduled_tokens.values())
-        self.num_scheduled_tokens.update(num_scheduled_tokens)
+        # self.num_scheduled_tokens.update(num_scheduled_tokens)
         assert total_num_scheduled_tokens <= self.max_num_scheduled_tokens
         # assert token_budget >= 0
         assert len(self.running) <= self.max_num_running_reqs
@@ -439,6 +442,7 @@ class Scheduler:
             grammar_bitmask=grammar_bitmask,
         )
 
+        # print(sum(num for num in scheduler_output.num_scheduled_tokens.values()))
         self.finished_req_ids = set()
         return scheduler_output
 
@@ -655,7 +659,7 @@ class Scheduler:
                         stop_reason=request.stop_reason,
                         events=request.take_events()))
 
-            self.num_scheduled_tokens.pop(request.request_id)
+            # self.num_scheduled_tokens.pop(request.request_id)
             self.scheduled_req_ids.remove(request.request_id)
             if not stopped:
                 new_running.append(request)

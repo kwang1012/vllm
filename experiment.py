@@ -104,8 +104,6 @@ async def main(args):
     if envs.VLLM_TORCH_PROFILER_DIR:
         await engine.start_profile()
     outputs = await generate()
-    if envs.VLLM_TORCH_PROFILER_DIR:
-        await engine.stop_profile()
     pbar.close()
 
     avg_generated_text_len = []
@@ -114,6 +112,9 @@ async def main(args):
         # print(generated_text)
         avg_generated_text_len.append(len(generated_text))
 
+    if envs.VLLM_TORCH_PROFILER_DIR:
+        await engine.stop_profile()
+        
     destroy_model_parallel()
     print("Average generated text length:", sum(avg_generated_text_len) / len(avg_generated_text_len))
 

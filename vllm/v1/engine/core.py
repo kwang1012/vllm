@@ -79,6 +79,7 @@ class EngineCore:
         self.scheduler = Scheduler(
             scheduler_config=vllm_config.scheduler_config,
             model_config=vllm_config.model_config,
+            parallel_config=vllm_config.parallel_config,
             cache_config=vllm_config.cache_config,
             lora_config=vllm_config.lora_config,
             speculative_config=vllm_config.speculative_config,
@@ -158,8 +159,9 @@ class EngineCore:
         # TODO: The scheduler doesn't really need to know the
         # specific finish reason, TBD whether we propagate that
         # (i.e. client-aborted vs stop criteria met).
-        self.scheduler.finish_requests(request_ids,
-                                       RequestStatus.FINISHED_ABORTED)
+        for scheduler in self.scheduler:
+            scheduler.finish_requests(request_ids,
+                                        RequestStatus.FINISHED_ABORTED)
 
     def step(self) -> EngineCoreOutputs:
         """Schedule, execute, and make output."""
@@ -171,7 +173,7 @@ class EngineCore:
                 outputs=[],
                 scheduler_stats=self.scheduler.make_stats(),
             )
-        scheduler_output = self.scheduler.schedule()
+        scheduler_output = self.scheduler.schedule(0)
 
         # This case may occur when the only unfinished requests are
         # structured output requests where the grammar has not finished

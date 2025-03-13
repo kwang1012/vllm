@@ -97,6 +97,7 @@ class MultiprocExecutor(Executor):
         # For pipeline parallel, we use a thread pool for asynchronous
         # execute_model.
         self.io_thread_pool: Optional[ThreadPoolExecutor] = None
+        print(self.max_concurrent_batches)
         if self.max_concurrent_batches > 1:
             # Note: must use only 1 IO thread to keep dequeue sequence
             # from the response queue

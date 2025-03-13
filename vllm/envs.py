@@ -635,6 +635,9 @@ environment_variables: dict[str, Callable[[], Any]] = {
     # Whether to use atomicAdd reduce in gptq/awq marlin kernel.
     "VLLM_MARLIN_USE_ATOMIC_ADD":
     lambda: os.environ.get("VLLM_MARLIN_USE_ATOMIC_ADD", "0") == "1",
+    
+    "VLLM_LOGGING_FILENAME":
+    lambda: os.environ.get("VLLM_LOGGING_FILENAME", None)
 }
 
 # end-env-vars-definition
