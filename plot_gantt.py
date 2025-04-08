@@ -25,7 +25,7 @@ def main(filename):
         if "Avg prompt throughput" in line:
             if skip_first_50:
                 skip_counter += 1
-                if skip_counter == 5:
+                if skip_counter == 50:
                     skip_first_50 = False
                 continue
             info = line[line.find("] ") + 2:]

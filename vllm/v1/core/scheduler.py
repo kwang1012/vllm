@@ -145,8 +145,9 @@ class Scheduler:
         num_total_new_tokens = sum(self.total_num_new_tokens.values())
         # 2. Set token budget to num_total_tokens by pp_size
         pp_size = self.parallel_config.pipeline_parallel_size
-        token_budget = min(math.ceil(num_total_new_tokens / pp_size), self.max_num_scheduled_tokens)
+        token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
         
+        print(f"{token_budget=}")
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
         encoder_budget = self.max_num_encoder_input_tokens
@@ -442,7 +443,7 @@ class Scheduler:
             grammar_bitmask=grammar_bitmask,
         )
 
-        # print(sum(num for num in scheduler_output.num_scheduled_tokens.values()))
+        print(sum(num for num in scheduler_output.num_scheduled_tokens.values()))
         self.finished_req_ids = set()
         return scheduler_output
 
