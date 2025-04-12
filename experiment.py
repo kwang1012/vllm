@@ -74,9 +74,9 @@ async def main(args):
 
     prompts = [request[0] for request in requests]
 
-    # prompts = [
-    #     "How is the weather in Champaign?",
-    # ] * args.num_prompts
+    prompts = [
+        "How is the weather in Champaign?",
+    ] * args.num_prompts
     
     pbar = tqdm(
         total=len(prompts),
@@ -85,7 +85,7 @@ async def main(args):
     )
 
     async def run(prompt: str):
-        sampling_params = SamplingParams(max_tokens=args.max_tokens)
+        sampling_params = SamplingParams(max_tokens=args.max_tokens, temperature=0, ignore_eos=True)
 
         request_id = random_uuid()
         async for output in engine.generate(prompt,
@@ -106,17 +106,15 @@ async def main(args):
     outputs = await generate()
     pbar.close()
 
-    avg_generated_text_len = []
+    avg_generated_length = []
     for output in outputs:
-        generated_text = output.outputs[0].text
-        # print(generated_text)
-        avg_generated_text_len.append(len(generated_text))
+        avg_generated_length.append(len(output.outputs[0].token_ids))
 
     if envs.VLLM_TORCH_PROFILER_DIR:
         await engine.stop_profile()
         
     destroy_model_parallel()
-    print("Average generated text length:", sum(avg_generated_text_len) / len(avg_generated_text_len))
+    print("Average generated # tokens:", sum(avg_generated_length) / len(avg_generated_length))
 
 if __name__ == "__main__":
     parser = FlexibleArgumentParser()

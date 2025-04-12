@@ -253,19 +253,25 @@ class Worker(WorkerBase):
     ) -> Optional[ModelRunnerOutput]:
         intermediate_tensors = None
         if not get_pp_group().is_first_rank:
+            recv_start_time = time.perf_counter()
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict(
                     all_gather_group=get_tp_group()))
+            logger.info("Rank: %d, Recv start time: %f, Recv end time: %f, Batch: %d", self.rank, recv_start_time, time.perf_counter(), scheduler_output.mb)
 
         start_time = time.perf_counter()
         output = self.model_runner.execute_model(scheduler_output,
                                                  intermediate_tensors)
 
-        logger.info("Rank: %d, Execution start time: %f, Execution end time: %f", self.rank, start_time, time.perf_counter())
+        if envs.VLLM_LOGGING_FILENAME:
+            torch.cuda.synchronize()
+            logger.info("Rank: %d, Execution start time: %f, Execution end time: %f, Batch: %d", self.rank, start_time, time.perf_counter(), scheduler_output.mb)
         if not get_pp_group().is_last_rank:
             assert isinstance(output, IntermediateTensors)
+            send_start_time = time.perf_counter()
             get_pp_group().send_tensor_dict(output.tensors,
                                             all_gather_group=get_tp_group())
+            logger.info("Rank: %d, Send start time: %f, Send end time: %f, Batch: %d", self.rank, send_start_time, time.perf_counter(), scheduler_output.mb)
             return None
 
         assert isinstance(output, ModelRunnerOutput)

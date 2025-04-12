@@ -8,6 +8,7 @@ from collections import deque
 from collections.abc import Iterable
 from typing import Optional, Union
 
+from vllm import envs
 from vllm.config import (CacheConfig, LoRAConfig, ModelConfig, ParallelConfig, SchedulerConfig,
                          SpeculativeConfig)
 from vllm.logger import init_logger
@@ -109,8 +110,8 @@ class Scheduler:
         # for these models.
         self.encoder_cache_manager = EncoderCacheManager(
             cache_size=encoder_cache_size)
-
-    def schedule(self) -> SchedulerOutput:
+        
+    def schedule(self, mb: Optional[int] = None) -> SchedulerOutput:
         # NOTE(woosuk) on the scheduling algorithm:
         # There's no "decoding phase" nor "prefill phase" in the scheduler.
         # Each request just has the num_computed_tokens and
@@ -122,7 +123,6 @@ class Scheduler:
         # chunked prefills, prefix caching, speculative decoding,
         # and the "jump decoding" optimization in the future.
 
-        self.parallel_config
         scheduled_new_reqs: list[Request] = []
         scheduled_resumed_reqs: list[Request] = []
         scheduled_running_reqs: list[Request] = []
@@ -145,9 +145,8 @@ class Scheduler:
         num_total_new_tokens = sum(self.total_num_new_tokens.values())
         # 2. Set token budget to num_total_tokens by pp_size
         pp_size = self.parallel_config.pipeline_parallel_size
-        token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
+        total_token_budget = token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
         
-        print(f"{token_budget=}")
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
         encoder_budget = self.max_num_encoder_input_tokens
@@ -250,6 +249,7 @@ class Scheduler:
                 for i in encoder_inputs_to_schedule:
                     self.encoder_cache_manager.allocate(request, i)
                 encoder_budget = new_encoder_budget
+            print(f"{mb=} {request.request_id=} {request.num_computed_tokens=} {num_new_tokens=}")
 
         # Record the LoRAs in scheduled_running_reqs
         requested_loras: set[int] = set()
@@ -318,7 +318,7 @@ class Scheduler:
                     computed_blocks.pop()
                     
                 # TODO: round up request
-                num_new_tokens = min(num_new_tokens, self.max_num_scheduled_tokens)
+                num_new_tokens = min(num_new_tokens, token_budget)
                 assert num_new_tokens > 0
 
                 # Schedule encoder inputs.
@@ -360,6 +360,7 @@ class Scheduler:
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 request.status = RequestStatus.RUNNING
+                print(f"{mb=} {request.request_id=} {request.num_computed_tokens=} {num_new_tokens=}")
                 request.num_computed_tokens = num_computed_tokens
 
                 # Encoder-related.
@@ -441,9 +442,13 @@ class Scheduler:
             free_encoder_input_ids=self.encoder_cache_manager.get_freed_ids(),
             structured_output_request_ids=structured_output_request_ids,
             grammar_bitmask=grammar_bitmask,
+            mb=mb,
         )
 
-        print(sum(num for num in scheduler_output.num_scheduled_tokens.values()))
+
+        # print(f"{total_token_budget=} {total_num_scheduled_tokens=}")
+        if envs.VLLM_LOGGING_FILENAME:
+            logger.info("Num scheduled tokens: %s", total_num_scheduled_tokens)
         self.finished_req_ids = set()
         return scheduler_output
 
@@ -577,7 +582,7 @@ class Scheduler:
                 # its num_tokens, the request generates output tokens.
                 # Otherwise, we ignore the sampler output for the request.
                 request.num_computed_tokens += num_tokens_scheduled
-                assert request.num_computed_tokens <= request.num_tokens
+                assert request.num_computed_tokens <= request.num_tokens, f"{scheduler_output.mb=} {request.request_id=} {num_tokens_scheduled=} {request.num_computed_tokens=} {num_scheduled_tokens.keys()}"
             else:
                 # num_computed_tokens_step represents the number of tokens
                 # processed in the current step, considering scheduled
@@ -630,7 +635,8 @@ class Scheduler:
                     if stopped:
                         self._free_request(request)
                         break
-                self.total_num_new_tokens[request.request_id] = request.num_tokens_with_spec - request.num_computed_tokens
+                if not stopped:
+                    self.total_num_new_tokens[request.request_id] = request.num_tokens_with_spec - request.num_computed_tokens
                 # Extract sample logprobs if needed.
                 if request.sampling_params.logprobs is not None:
                     assert logprobs is not None
@@ -729,6 +735,7 @@ class Scheduler:
 
     def _free_request(self, request: Request) -> None:
         assert request.is_finished()
+        del self.total_num_new_tokens[request.request_id]
         self.kv_cache_manager.free(request)
         self.kv_cache_manager.free_block_hashes(request)
         self.encoder_cache_manager.free(request)

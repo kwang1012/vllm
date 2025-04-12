@@ -9,68 +9,22 @@ def main(filename):
         lines = f.readlines()
 
     stage_events = {}
-    skip_first_50 = True
     skip_counter = 0
-    eid = 0
-    is_last_prefill = False
+    start_from = 0
+    num_events = 500
     red_lines = []
     blue_lines = []
     green_lines = []
-    skip_first = True
     black_lines = []
     yellow_lines = []
     purple_lines = []
-    for l_n, line in enumerate(lines):
+    batch_sizes = []
+    for line in lines:
         line = line.strip()
-        if "Avg prompt throughput" in line:
-            if skip_first_50:
-                skip_counter += 1
-                if skip_counter == 50:
-                    skip_first_50 = False
+        if "Execution start time" in line:
+
+            if skip_counter < start_from or skip_counter > start_from + num_events:
                 continue
-            info = line[line.find("] ") + 2:]
-            info = info.split(",")
-
-            virtual_engine = int(info[0].split(":")[1].strip())
-            tpot = float(info[9].split(":")[1].strip())
-            stage_info = info[13].split(":")[1].strip().rstrip(".")
-            stage_info = [json.loads(x.replace(";", ":").replace(
-                "*", ",")) for x in stage_info.split(">")]
-
-            if tpot == 0:
-                is_last_prefill = True
-                continue
-            if stage_events is None:
-                stage_events = [[] for _ in stage_info]
-
-            for i, stage in enumerate(stage_info):
-                start_time = stage["exec_timestamp"]
-                end_time = stage["exec_time"]
-
-                if stage["enter_timestamp"] and stage["enter_timestamp"] >= stage["prev_exec_timestamp"]:
-                    stage_events[i].append(
-                        (stage["enter_timestamp"], stage["enter_time"], "tab:brown", f"{virtual_engine}"))
-                    if not is_last_prefill:
-                        stage_events[i].append(
-                            (stage["prev_exec_timestamp"], stage["enter_timestamp"] - stage["prev_exec_timestamp"], "tab:pink", f"{virtual_engine}"))
-                elif not is_last_prefill:
-                    stage_events[i].append(
-                        (stage["prev_exec_timestamp"], stage["prev_exec_time"], "tab:pink", f"{virtual_engine}"))
-                stage_events[i].append(
-                    (stage["start_timestamp"], stage["prep_time"], "tab:green", f"{virtual_engine}"))
-                if stage["recv_timestamp"] is not None:
-                    stage_events[i].append(
-                        (stage["recv_timestamp"], stage["recv_time"], "tab:red", f"{virtual_engine}"))
-                stage_events[i].append(
-                    (start_time, end_time, "tab:blue", f"{virtual_engine}"))
-                
-                # black_lines.append((stage["multiproc_end_timestamp"], virtual_engine))
-            print(l_n)
-
-            eid += 1
-            is_last_prefill = False
-
-        elif "Execution start time" in line:
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
@@ -79,16 +33,50 @@ def main(filename):
                 stage_events[rank] = []
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
-            stage_events[rank].append((start_time, end_time - start_time))
-            eid += 1
+            mb = info[3].split(":")[1].strip()
+            stage_events[rank].append((start_time, end_time - start_time, "tab:blue", mb))
 
-        if eid > 20:
-            break
+        elif "Num scheduled tokens" in line:
+            info = line[line.find("] ") + 2:]
+            info = info.split(",")
+            bs = int(info[0].split(":")[1].strip())
+            batch_sizes.append(bs)
 
+        elif "Send start time" in line:
+            if skip_counter < start_from or skip_counter > start_from + num_events:
+                continue
+            info = line[line.find("] ") + 2:]
+            info = info.split(",")
+            rank = int(info[0].split(":")[1].strip())
+            
+            if rank not in stage_events:
+                stage_events[rank] = []
+
+            start_time = float(info[1].split(":")[1].strip())
+            end_time = float(info[2].split(":")[1].strip())
+            stage_events[rank].append((start_time, end_time - start_time, "tab:orange", ""))
+
+        elif "Recv start time" in line:
+            if skip_counter < start_from or skip_counter > start_from + num_events:
+                continue
+            info = line[line.find("] ") + 2:]
+            info = info.split(",")
+            rank = int(info[0].split(":")[1].strip())
+            
+            if rank not in stage_events:
+                stage_events[rank] = []
+
+            start_time = float(info[1].split(":")[1].strip())
+            end_time = float(info[2].split(":")[1].strip())
+            stage_events[rank].append((start_time, end_time - start_time, "tab:green", ""))
+        skip_counter += 1
+
+
+    print(batch_sizes)
     fig, ax = plt.subplots(figsize=(48, 5))
     start_timestamp = min(e[0] for events in stage_events.values() for e in events)
-    # stage_events_labels = [[e[3] for e in events] for events in stage_events]
-    # stage_events_colors = [[e[2] for e in events] for events in stage_events]
+    stage_events_labels = [[e[3] for e in events] for events in stage_events.values()]
+    stage_events_colors = [[e[2] for e in events] for events in stage_events.values()]
     stage_events = [[(e[0] - start_timestamp, e[1])
                      for e in events] for events in stage_events.values()]
     
@@ -103,18 +91,20 @@ def main(filename):
     # for i, line in enumerate(green_lines):
     #     if i != 0:
     #         itl.append(line - green_lines[i-1])
+    print(stage_events[0])
     for i, events in enumerate(stage_events):
-        # colors = stage_events_colors[i]
+        colors = stage_events_colors[i]
         ax.broken_barh(events, ((len(stage_events) - i - 1)
-                       * 5, 4))
+                       * 5, 4), fc=colors, ec="black")
 
-        # for eid, (x1, x2) in enumerate(events):
-        #     ax.text(x=x1 + x2/2,
-        #             y=(len(stage_events) - i - 1) * 5 + 2,
-        #             s=stage_events_labels[i][eid],
-        #             ha='center',
-        #             va='center',
-        #             color='white',)
+        for eid, (x1, x2) in enumerate(events):
+            ax.text(x=x1 + x2/2,
+                    y=(len(stage_events) - i - 1) * 5 + 2,
+                    s=stage_events_labels[i][eid],
+                    ha='center',
+                    va='center',
+                    color='white',
+                    fontsize=18)
 
     # l1 = ax.vlines([l[0] for l in red_lines], 0, len(stage_events) * 5, colors="red", linestyles="dashed", label="left_time")
     # for i, (l, ve) in enumerate(red_lines):

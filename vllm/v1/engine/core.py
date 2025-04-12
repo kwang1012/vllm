@@ -102,6 +102,8 @@ class EngineCore:
             logger.info("Batch queue is enabled with size %d",
                         self.batch_queue_size)
             self.batch_queue = queue.Queue(self.batch_queue_size)
+        
+        self.batch_states = {i: False for i in range(self.batch_queue_size)}
 
     def _initialize_kv_caches(self,
                               vllm_config: VllmConfig) -> tuple[int, int]:
@@ -159,8 +161,7 @@ class EngineCore:
         # TODO: The scheduler doesn't really need to know the
         # specific finish reason, TBD whether we propagate that
         # (i.e. client-aborted vs stop criteria met).
-        for scheduler in self.scheduler:
-            scheduler.finish_requests(request_ids,
+        self.scheduler.finish_requests(request_ids,
                                         RequestStatus.FINISHED_ABORTED)
 
     def step(self) -> EngineCoreOutputs:
@@ -173,7 +174,7 @@ class EngineCore:
                 outputs=[],
                 scheduler_stats=self.scheduler.make_stats(),
             )
-        scheduler_output = self.scheduler.schedule(0)
+        scheduler_output = self.scheduler.schedule()
 
         # This case may occur when the only unfinished requests are
         # structured output requests where the grammar has not finished
@@ -208,11 +209,16 @@ class EngineCore:
 
         engine_core_outputs = None
         scheduler_output = None
+        mb = None
+        for batch, state in self.batch_states.items():
+            if not state:
+                mb = batch
         # If there are unscheduled requests and the job queue
         # is not full, schedule a new batch. Note that this is not blocking.
         if (self.scheduler.get_num_unscheduled_requests() > 0
                 and not self.batch_queue.full()):
-            scheduler_output = self.scheduler.schedule()
+            self.batch_states[mb] = True
+            scheduler_output = self.scheduler.schedule(mb)
             if scheduler_output.total_num_scheduled_tokens > 0:
                 future = self.model_executor.execute_model(scheduler_output)
                 self.batch_queue.put_nowait(
@@ -225,6 +231,7 @@ class EngineCore:
         # block until the first batch in the job queue is finished.
         if not scheduled_batch and not self.batch_queue.empty():
             future, scheduler_output = self.batch_queue.get_nowait()
+            self.batch_states[scheduler_output.mb] = False
             # Blocking until the first result is available.
             model_output = future.result()
             self.batch_queue.task_done()

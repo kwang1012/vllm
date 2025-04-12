@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     VLLM_DP_MASTER_IP: str = ""
     VLLM_DP_MASTER_PORT: int = 0
     VLLM_MARLIN_USE_ATOMIC_ADD: bool = False
+    VLLM_LOGGING_FILENAME: Optional[str] = None
 
 
 def get_default_cache_root():
