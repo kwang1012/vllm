@@ -9,9 +9,9 @@ def main(filename):
         lines = f.readlines()
 
     stage_events = {}
-    skip_counter = 0
+    execution_events = {}
     start_from = 0
-    num_events = 500
+    num_events = 50
     red_lines = []
     blue_lines = []
     green_lines = []
@@ -23,56 +23,58 @@ def main(filename):
         line = line.strip()
         if "Execution start time" in line:
 
-            if skip_counter < start_from or skip_counter > start_from + num_events:
-                continue
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
             
             if rank not in stage_events:
                 stage_events[rank] = []
+                execution_events[rank] = 0
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
             mb = info[3].split(":")[1].strip()
-            stage_events[rank].append((start_time, end_time - start_time, "tab:blue", mb))
+
+            execution_events[rank] += 1
+            if start_from <= execution_events[rank] < start_from + num_events:
+                stage_events[rank].append((start_time, end_time - start_time, "tab:blue", mb))
 
         elif "Num scheduled tokens" in line:
             info = line[line.find("] ") + 2:]
             info = info.split(",")
-            bs = int(info[0].split(":")[1].strip())
-            batch_sizes.append(bs)
+
+            mb = int(info[0].split(":")[1].strip())
+            bs = int(info[1].split(":")[1].strip())
+            batch_sizes.append((mb, bs))
 
         elif "Send start time" in line:
-            if skip_counter < start_from or skip_counter > start_from + num_events:
-                continue
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
             
             if rank not in stage_events:
                 stage_events[rank] = []
+                execution_events[rank] = 0
 
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
-            stage_events[rank].append((start_time, end_time - start_time, "tab:orange", ""))
+            if start_from <= execution_events[rank] < start_from + num_events:
+                stage_events[rank].append((start_time, end_time - start_time, "tab:orange", ""))
 
         elif "Recv start time" in line:
-            if skip_counter < start_from or skip_counter > start_from + num_events:
-                continue
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
             
             if rank not in stage_events:
                 stage_events[rank] = []
+                execution_events[rank] = 0
 
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
-            stage_events[rank].append((start_time, end_time - start_time, "tab:green", ""))
-        skip_counter += 1
-
-
-    print(batch_sizes)
+            if start_from <= execution_events[rank] < start_from + num_events:
+                stage_events[rank].append((start_time, end_time - start_time, "tab:green", ""))
+    
+    print(sum([bs[1] for bs in batch_sizes]) / len(batch_sizes), len(batch_sizes))
     fig, ax = plt.subplots(figsize=(48, 5))
     start_timestamp = min(e[0] for events in stage_events.values() for e in events)
     stage_events_labels = [[e[3] for e in events] for events in stage_events.values()]
@@ -91,7 +93,6 @@ def main(filename):
     # for i, line in enumerate(green_lines):
     #     if i != 0:
     #         itl.append(line - green_lines[i-1])
-    print(stage_events[0])
     for i, events in enumerate(stage_events):
         colors = stage_events_colors[i]
         ax.broken_barh(events, ((len(stage_events) - i - 1)
@@ -116,17 +117,17 @@ def main(filename):
     #             color='red',)
     # lns = [ l6]
 
-    # labels = ["exec_time", "prep_time", "recv_time", "prev_exect_time", "enter_time"] + [ln.get_label() for ln in lns]
-    # colors = ["tab:blue", "tab:green", "tab:red", "tab:pink", "tab:brown"]
-    # handles = [mpatches.Patch(color=color, label=label)
-    #            for color, label in zip(colors, labels)] + lns
+    labels = ["send_time", "recv_time"]
+    colors = ["tab:orange", "tab:green"]
+    handles = [mpatches.Patch(color=color, label=label)
+               for color, label in zip(colors, labels)]
 
     y_ticks = [5 * i + 2 for i in range(len(stage_events))]
     y_ticklabels = [f"Stage {i}" for i in range(len(stage_events)-1, 0)]
     ax.set_yticks(y_ticks)  # Set tick positions
     ax.set_yticklabels(y_ticklabels)
     # Add the legend
-    # ax.legend(handles=handles)
+    ax.legend(handles=handles, fontsize=18)
     fig.savefig(f"{filename}-gantt.png", bbox_inches="tight")
 
 

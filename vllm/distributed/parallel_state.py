@@ -21,11 +21,13 @@ If you only need to use the distributed environment without model/pipeline
  parallelism, you can skip the model parallel initialization and destruction
  steps.
 """
+from concurrent.futures import ThreadPoolExecutor
 import contextlib
 import gc
 import pickle
+import threading
 import weakref
-from collections import namedtuple
+from collections import deque, namedtuple
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from multiprocessing import shared_memory
@@ -220,6 +222,19 @@ class GroupCoordinator:
 
         from vllm.platforms import current_platform
         self.use_custom_op_call = current_platform.is_cuda_alike()
+
+        self.transport_thread = ThreadPoolExecutor(max_workers=1)
+        self.intermediate_tensors_buffer = deque()
+
+        self.request_handling_thread = None
+        self.buffer_cv = threading.Condition()
+
+    def drop_select_handler(self, all_gather_group = None):
+        while True:
+            tensor_dict = self.recv_tensor_dict()
+            with self.buffer_cv:
+                self.intermediate_tensors_buffer.append(tensor_dict)
+                self.buffer_cv.notify()
 
     @property
     def first_rank(self):
@@ -512,6 +527,14 @@ class GroupCoordinator:
                 async_handle.wait()
         return tensor_dict
 
+    def send_tensor_dict_async(
+        self,
+        tensor_dict: Dict[str, Union[torch.Tensor, Any]],
+        dst: Optional[int] = None,
+        all_gather_group: Optional["GroupCoordinator"] = None,
+    ):
+        self.transport_thread.submit(self.send_tensor_dict, tensor_dict, dst, all_gather_group)
+
     def send_tensor_dict(
         self,
         tensor_dict: Dict[str, Union[torch.Tensor, Any]],
@@ -567,6 +590,18 @@ class GroupCoordinator:
                                        dst=self.ranks[dst],
                                        group=group)
         return None
+
+    def recv_tensor_dict_async(self, src: Optional[int] = None, all_gather_group = None):
+        if self.request_handling_thread is None:
+            self.request_handling_thread = threading.Thread(
+                target=self.drop_select_handler, args=(all_gather_group, ))
+            self.request_handling_thread.start()
+        
+        with self.buffer_cv:
+            while len(self.intermediate_tensors_buffer) == 0:
+                self.buffer_cv.wait()
+                
+            self.intermediate_tensors_buffer.popleft()
 
     def recv_tensor_dict(
         self,

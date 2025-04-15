@@ -189,12 +189,21 @@ class Scheduler:
                 continue
 
             while True:
+                idx = len(self.running) - 1
                 new_blocks = self.kv_cache_manager.allocate_slots(
                     request, num_new_tokens)
                 if new_blocks is None:
                     # The request cannot be scheduled.
                     # Preempt the lowest-priority request.
-                    preempted_req = self.running.pop()
+                    while idx >= 0:
+                        preempted_req = self.running[idx]
+                        if preempted_req.mb == mb:
+                            self.running.remove(preempted_req)
+                            break
+                        idx -= 1
+                    if preempted_req is None:
+                        can_schedule = False
+                        break
                     self.kv_cache_manager.free(preempted_req)
                     preempted_req.status = RequestStatus.PREEMPTED
                     preempted_req.num_computed_tokens = 0
@@ -249,8 +258,7 @@ class Scheduler:
                 for i in encoder_inputs_to_schedule:
                     self.encoder_cache_manager.allocate(request, i)
                 encoder_budget = new_encoder_budget
-            print(f"{mb=} {request.request_id=} {request.num_computed_tokens=} {num_new_tokens=}")
-
+            request.mb = mb
         # Record the LoRAs in scheduled_running_reqs
         requested_loras: set[int] = set()
         if self.lora_config:
@@ -360,8 +368,8 @@ class Scheduler:
                 num_scheduled_tokens[request.request_id] = num_new_tokens
                 token_budget -= num_new_tokens
                 request.status = RequestStatus.RUNNING
-                print(f"{mb=} {request.request_id=} {request.num_computed_tokens=} {num_new_tokens=}")
                 request.num_computed_tokens = num_computed_tokens
+                request.mb = mb
 
                 # Encoder-related.
                 if encoder_inputs_to_schedule:
@@ -448,7 +456,7 @@ class Scheduler:
 
         # print(f"{total_token_budget=} {total_num_scheduled_tokens=}")
         if envs.VLLM_LOGGING_FILENAME:
-            logger.info("Num scheduled tokens: %s", total_num_scheduled_tokens)
+            logger.info("Batch: %s, Num scheduled tokens: %s", mb, total_num_scheduled_tokens)
         self.finished_req_ids = set()
         return scheduler_output
 
@@ -563,7 +571,7 @@ class Scheduler:
 
         new_running: list[Request] = []
         outputs: list[EngineCoreOutput] = []
-
+        mb = scheduler_output.mb
         # NOTE(woosuk): As len(self.running) can be up to 1K or more, the below
         # loop can be a performance bottleneck. We should do our best to avoid
         # expensive operations inside the loop.

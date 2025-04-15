@@ -174,7 +174,7 @@ class EngineCore:
                 outputs=[],
                 scheduler_stats=self.scheduler.make_stats(),
             )
-        scheduler_output = self.scheduler.schedule()
+        scheduler_output = self.scheduler.schedule(0)
 
         # This case may occur when the only unfinished requests are
         # structured output requests where the grammar has not finished
@@ -209,14 +209,15 @@ class EngineCore:
 
         engine_core_outputs = None
         scheduler_output = None
-        mb = None
-        for batch, state in self.batch_states.items():
-            if not state:
-                mb = batch
         # If there are unscheduled requests and the job queue
         # is not full, schedule a new batch. Note that this is not blocking.
         if (self.scheduler.get_num_unscheduled_requests() > 0
                 and not self.batch_queue.full()):
+            mb = None
+            for batch, state in sorted(self.batch_states.items()):
+                if not state:
+                    mb = batch
+                    break
             self.batch_states[mb] = True
             scheduler_output = self.scheduler.schedule(mb)
             if scheduler_output.total_num_scheduled_tokens > 0:
@@ -231,12 +232,12 @@ class EngineCore:
         # block until the first batch in the job queue is finished.
         if not scheduled_batch and not self.batch_queue.empty():
             future, scheduler_output = self.batch_queue.get_nowait()
-            self.batch_states[scheduler_output.mb] = False
             # Blocking until the first result is available.
             model_output = future.result()
             self.batch_queue.task_done()
             engine_core_outputs = self.scheduler.update_from_output(
                 scheduler_output, model_output)
+            self.batch_states[scheduler_output.mb] = False
 
         return engine_core_outputs
 
