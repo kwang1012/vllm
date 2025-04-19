@@ -141,11 +141,11 @@ class Scheduler:
         # token_budget = self.max_num_scheduled_tokens
         
         # 1. Check number of scheduled tokens and total number of tokens
-        # num_scheduled_tokens = sum(self.num_scheduled_tokens.values())
         num_total_new_tokens = sum(self.total_num_new_tokens.values())
         # 2. Set token budget to num_total_tokens by pp_size
         pp_size = self.parallel_config.pipeline_parallel_size
-        total_token_budget = token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
+        token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
+        # print(f"======={mb=}, {token_budget=}, {num_total_new_tokens=}======")
         
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
@@ -208,7 +208,7 @@ class Scheduler:
                     preempted_req.status = RequestStatus.PREEMPTED
                     preempted_req.num_computed_tokens = 0
                     self.request_preempted(preempted_req, scheduled_timestamp)
-
+                    del self.total_num_new_tokens[preempted_req.request_id]
                     self.waiting.appendleft(preempted_req)
                     preempted_reqs.append(preempted_req)
                     if preempted_req == request:
@@ -236,6 +236,8 @@ class Scheduler:
                 b.block_id for b in new_blocks
             ]
             num_scheduled_tokens[request.request_id] = num_new_tokens
+            # if request.num_computed_tokens < len(request.prompt_token_ids):
+                # self.total_num_new_tokens[request.request_id] = len(request.prompt_token_ids) - request.num_computed_tokens
             token_budget -= num_new_tokens
             req_index += 1
 
@@ -370,6 +372,7 @@ class Scheduler:
                 request.status = RequestStatus.RUNNING
                 request.num_computed_tokens = num_computed_tokens
                 request.mb = mb
+                # self.total_num_new_tokens[request.request_id] = 0
 
                 # Encoder-related.
                 if encoder_inputs_to_schedule:
@@ -453,10 +456,22 @@ class Scheduler:
             mb=mb,
         )
 
-
-        # print(f"{total_token_budget=} {total_num_scheduled_tokens=}")
-        if envs.VLLM_LOGGING_FILENAME:
-            logger.info("Batch: %s, Num scheduled tokens: %s", mb, total_num_scheduled_tokens)
+        prefill_dict = {}
+        for req in scheduled_new_reqs:
+            if num_scheduled_tokens[req.request_id] not in prefill_dict:
+                prefill_dict[num_scheduled_tokens[req.request_id]] = 0
+            prefill_dict[num_scheduled_tokens[req.request_id]] += 1
+        
+        # prefill_count = sum(num_tokens * count for num_tokens, count in prefill_dict.items())
+        # if prefill_count == 0:
+        #     prefill_str = "0"
+        # else:
+        #     prefill_str = f"{prefill_count}(" + "+".join(
+        #         f"{num_tokens}*{count}" for num_tokens, count in prefill_dict.items()) + ")"
+        # decode_count = len(scheduled_running_reqs)
+        # print(f"Prefills: {prefill_str}, Decodes: {decode_count}, Num scheduled tokens: {total_num_scheduled_tokens}")
+        # if envs.VLLM_LOGGING_FILENAME:
+        #     logger.info("Batch: %s, Num scheduled tokens: %s, Total schedulable tokens: %s", mb, total_num_scheduled_tokens, num_total_new_tokens)
         self.finished_req_ids = set()
         return scheduler_output
 
@@ -643,8 +658,6 @@ class Scheduler:
                     if stopped:
                         self._free_request(request)
                         break
-                if not stopped:
-                    self.total_num_new_tokens[request.request_id] = request.num_tokens_with_spec - request.num_computed_tokens
                 # Extract sample logprobs if needed.
                 if request.sampling_params.logprobs is not None:
                     assert logprobs is not None
@@ -677,7 +690,17 @@ class Scheduler:
             # self.num_scheduled_tokens.pop(request.request_id)
             self.scheduled_req_ids.remove(request.request_id)
             if not stopped:
+                self.total_num_new_tokens[req_id] = request.num_tokens_with_spec - request.num_computed_tokens
                 new_running.append(request)
+
+        count_dict = {}
+        for req, count in self.total_num_new_tokens.items():
+            if count not in count_dict:
+                count_dict[count] = 0
+            count_dict[count] += 1
+        
+        req_count = sum(num_tokens * count for num_tokens, count in count_dict.items())
+        # print(f"Update {mb=}, total_num_new_tokens={req_count}({'+'.join(f'{num_tokens}*{count}' for num_tokens, count in count_dict.items())})")
 
         self.running = new_running
         return EngineCoreOutputs(

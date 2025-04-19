@@ -230,11 +230,15 @@ class GroupCoordinator:
         self.buffer_cv = threading.Condition()
 
     def drop_select_handler(self, all_gather_group = None):
-        while True:
-            tensor_dict = self.recv_tensor_dict()
-            with self.buffer_cv:
-                self.intermediate_tensors_buffer.append(tensor_dict)
-                self.buffer_cv.notify()
+        torch.cuda.set_device(self.device)
+        try:
+            while True:
+                tensor_dict = self.recv_tensor_dict(all_gather_group=all_gather_group)
+                with self.buffer_cv:
+                    self.intermediate_tensors_buffer.append(tensor_dict)
+                    self.buffer_cv.notify()
+        except:
+            return
 
     @property
     def first_rank(self):
@@ -569,6 +573,7 @@ class GroupCoordinator:
         # `send_object_list` has serialization & deserialization,
         # all happening on CPU. Therefore, we can use the CPU group.
         self.send_object(metadata_list, dst=dst)
+        async_handles = []
         for tensor in tensor_list:
             if tensor.numel() == 0:
                 # Skip sending empty tensors.
@@ -581,14 +586,17 @@ class GroupCoordinator:
 
             if tensor.is_cpu:
                 # use metadata_group for CPU tensors
-                torch.distributed.send(tensor,
+                handle = torch.distributed.isend(tensor,
                                        dst=self.ranks[dst],
                                        group=metadata_group)
             else:
                 # use group for GPU tensors
-                torch.distributed.send(tensor,
+                handle = torch.distributed.isend(tensor,
                                        dst=self.ranks[dst],
                                        group=group)
+            async_handles.append(handle)
+        for async_handle in async_handles:
+            async_handle.wait()
         return None
 
     def recv_tensor_dict_async(self, src: Optional[int] = None, all_gather_group = None):
@@ -601,7 +609,7 @@ class GroupCoordinator:
             while len(self.intermediate_tensors_buffer) == 0:
                 self.buffer_cv.wait()
                 
-            self.intermediate_tensors_buffer.popleft()
+            return self.intermediate_tensors_buffer.popleft()
 
     def recv_tensor_dict(
         self,
@@ -629,6 +637,7 @@ class GroupCoordinator:
 
         recv_metadata_list = self.recv_object(src=src)
         tensor_dict: Dict[str, Any] = {}
+        async_handles = []
         for key, value in recv_metadata_list:
             if isinstance(value, TensorMetadata):
                 tensor = torch.empty(value.size,
@@ -650,12 +659,12 @@ class GroupCoordinator:
 
                 if tensor.is_cpu:
                     # use metadata_group for CPU tensors
-                    torch.distributed.recv(tensor,
+                    handle = torch.distributed.irecv(tensor,
                                            src=self.ranks[src],
                                            group=metadata_group)
                 else:
                     # use group for GPU tensors
-                    torch.distributed.recv(tensor,
+                    handle = torch.distributed.irecv(tensor,
                                            src=self.ranks[src],
                                            group=group)
                 if use_all_gather:
@@ -663,10 +672,12 @@ class GroupCoordinator:
                     tensor = all_gather_group.all_gather(  # type: ignore
                         tensor, dim=0)
                     tensor = tensor.reshape(orig_shape)
-
+                async_handles.append(handle)
                 tensor_dict[key] = tensor
             else:
                 tensor_dict[key] = value
+        for async_handle in async_handles:
+            async_handle.wait()
         return tensor_dict
 
     def barrier(self):

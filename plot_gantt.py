@@ -12,13 +12,13 @@ def main(filename):
     execution_events = {}
     start_from = 0
     num_events = 50
-    red_lines = []
-    blue_lines = []
-    green_lines = []
-    black_lines = []
-    yellow_lines = []
-    purple_lines = []
     batch_sizes = []
+    bs_to_exec_time = []
+    exec_time_dict = {}
+    prep_time_dict = {}
+    batch_exec_time_dict = {}
+    batch_prep_time_dict = {}
+    batch_sample_time_dict = {}
     for line in lines:
         line = line.strip()
         if "Execution start time" in line:
@@ -26,17 +26,38 @@ def main(filename):
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
-            
+
             if rank not in stage_events:
                 stage_events[rank] = []
                 execution_events[rank] = 0
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
             mb = info[3].split(":")[1].strip()
-
+            bs = int(info[4].split(":")[1].strip())
+            prep_time = float(info[6].split(":")[1].strip())
+            sample_time = float(info[7].split(":")[1].strip())
+            exec_time = end_time - start_time
+            bs_to_exec_time.append((bs, exec_time))
+            if rank not in batch_exec_time_dict:
+                batch_exec_time_dict[rank] = {}
+                batch_prep_time_dict[rank] = {}
+                batch_sample_time_dict[rank] = {}
+            if bs not in exec_time_dict:
+                exec_time_dict[bs] = []
+                prep_time_dict[bs] = []
+            if bs not in batch_exec_time_dict[rank]:
+                batch_exec_time_dict[rank][bs] = []
+                batch_prep_time_dict[rank][bs] = []
+                batch_sample_time_dict[rank][bs] = []
+            exec_time_dict[bs].append(1000*exec_time - prep_time)
+            prep_time_dict[bs].append(prep_time)
+            batch_exec_time_dict[rank][bs].append(1000*exec_time - prep_time)
+            batch_prep_time_dict[rank][bs].append(prep_time)
+            batch_sample_time_dict[rank][bs].append(sample_time)
             execution_events[rank] += 1
             if start_from <= execution_events[rank] < start_from + num_events:
-                stage_events[rank].append((start_time, end_time - start_time, "tab:blue", mb))
+                stage_events[rank].append(
+                    (start_time, end_time - start_time, "tab:blue", mb))
 
         elif "Num scheduled tokens" in line:
             info = line[line.find("] ") + 2:]
@@ -44,13 +65,14 @@ def main(filename):
 
             mb = int(info[0].split(":")[1].strip())
             bs = int(info[1].split(":")[1].strip())
-            batch_sizes.append((mb, bs))
+            total_tokens = int(info[2].split(":")[1].strip())
+            batch_sizes.append((mb, bs, total_tokens))
 
         elif "Send start time" in line:
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
-            
+
             if rank not in stage_events:
                 stage_events[rank] = []
                 execution_events[rank] = 0
@@ -58,13 +80,14 @@ def main(filename):
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
             if start_from <= execution_events[rank] < start_from + num_events:
-                stage_events[rank].append((start_time, end_time - start_time, "tab:orange", ""))
+                stage_events[rank].append(
+                    (start_time, end_time - start_time, "tab:orange", ""))
 
         elif "Recv start time" in line:
             info = line[line.find("] ") + 2:]
             info = info.split(",")
             rank = int(info[0].split(":")[1].strip())
-            
+
             if rank not in stage_events:
                 stage_events[rank] = []
                 execution_events[rank] = 0
@@ -72,27 +95,39 @@ def main(filename):
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
             if start_from <= execution_events[rank] < start_from + num_events:
-                stage_events[rank].append((start_time, end_time - start_time, "tab:green", ""))
-    
-    print(sum([bs[1] for bs in batch_sizes]) / len(batch_sizes), len(batch_sizes))
+                stage_events[rank].append(
+                    (start_time, end_time - start_time, "tab:green", ""))
+
+    for rank, _exec_time_dict in batch_exec_time_dict.items():
+        print("=====RANK", rank, "=====")
+        for bs, exec_time in sorted(_exec_time_dict.items()):
+            prep_time = batch_prep_time_dict[rank][bs]
+            print(
+                f"{bs}({len(exec_time)}){sum(exec_time) / len(exec_time):.1f}ms {sum(prep_time) / len(prep_time):.1f}ms {sum(batch_sample_time_dict[rank][bs]) / len(batch_sample_time_dict[rank][bs]):.1f}ms")
+    print("=====ALL RANKS=====")
+    for bs, exec_time in sorted(exec_time_dict.items()):
+        prep_time = prep_time_dict[bs]
+        print(f"{bs}({len(exec_time)}){sum(exec_time) / len(exec_time):.1f}ms {sum(prep_time) / len(prep_time):.1f}ms")
+    # print("Stage events:", batch_sizes)
+    # for batch in batch_sizes:
+    #     mb, bs, total_tokens = batch
+    #     print(f"mb: {mb}, bs: {bs}, total_tokens: {total_tokens}")
     fig, ax = plt.subplots(figsize=(48, 5))
-    start_timestamp = min(e[0] for events in stage_events.values() for e in events)
-    stage_events_labels = [[e[3] for e in events] for events in stage_events.values()]
-    stage_events_colors = [[e[2] for e in events] for events in stage_events.values()]
+    start_timestamp = min(e[0]
+                          for events in stage_events.values() for e in events)
+    stage_events_labels = [[e[3] for e in events]
+                           for events in stage_events.values()]
+    stage_events_colors = [[e[2] for e in events]
+                           for events in stage_events.values()]
     stage_events = [[(e[0] - start_timestamp, e[1])
                      for e in events] for events in stage_events.values()]
-    
-    red_lines = [(l[0] - start_timestamp, l[1]) for l in red_lines if l[0] > start_timestamp - 0.01]
-    blue_lines = [(l[0] - start_timestamp, l[1]) for l in blue_lines if l[0] > start_timestamp - 0.01]
-    green_lines = [(l[0] - start_timestamp, l[1]) for l in green_lines if l[0] > start_timestamp - 0.01]
-    black_lines = [(l[0] - start_timestamp, l[1]) for l in black_lines if l[0] > start_timestamp - 0.01]
-    purple_lines = [(l[0] - start_timestamp, l[1]) for l in purple_lines if l[0] > start_timestamp - 0.01]
-    yellow_lines = [(l[0] - start_timestamp, l[1]) for l in yellow_lines if l[0] > start_timestamp - 0.01]
 
+    # green_lines = [(l[0] - start_timestamp, l[1]) for l in green_lines if l[0] > start_timestamp - 0.01]
     # itl = []
     # for i, line in enumerate(green_lines):
     #     if i != 0:
     #         itl.append(line - green_lines[i-1])
+
     for i, events in enumerate(stage_events):
         colors = stage_events_colors[i]
         ax.broken_barh(events, ((len(stage_events) - i - 1)
@@ -129,6 +164,19 @@ def main(filename):
     # Add the legend
     ax.legend(handles=handles, fontsize=18)
     fig.savefig(f"{filename}-gantt.png", bbox_inches="tight")
+
+    fig, ax = plt.subplots()
+    ax.scatter(
+        [bs for bs, _ in bs_to_exec_time],
+        [exec_time for _, exec_time in bs_to_exec_time],
+        marker="o",
+        linestyle="-",
+        color="tab:blue",
+    )
+    ax.set_xlabel("Batch Size", fontsize=18)
+    ax.set_ylabel("Execution Time (s)", fontsize=18)
+    ax.set_title("Batch Size vs Execution Time", fontsize=18)
+    fig.savefig(f"{filename}-exec_time.png", bbox_inches="tight")
 
 
 if __name__ == "__main__":
