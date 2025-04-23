@@ -22,6 +22,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 """Inference-only LLaMA model compatible with HuggingFace weights."""
+import math
 from typing import Any, Dict, Iterable, Optional, Set, Tuple, Type, Union
 
 import torch
@@ -214,6 +215,9 @@ class LlamaDecoderLayer(nn.Module):
         cache_config: Optional[CacheConfig] = None,
         quant_config: Optional[QuantizationConfig] = None,
         prefix: str = "",
+        *,
+        attn_only: Optional[bool] = False,
+        mlp_only: Optional[bool] = False,
     ) -> None:
         super().__init__()
         self.hidden_size = config.hidden_size
@@ -225,42 +229,46 @@ class LlamaDecoderLayer(nn.Module):
                 config.original_max_position_embeddings)
         max_position_embeddings = getattr(config, "max_position_embeddings",
                                           8192)
-        # Support abacusai/Smaug-72B-v0.1 with attention_bias
-        # Support internlm/internlm-7b with bias
-        attention_bias = getattr(config, "attention_bias", False) or getattr(
-            config, "bias", False)
-        bias_o_proj = attention_bias
-        # support internlm/internlm3-8b with qkv_bias
-        if hasattr(config, 'qkv_bias'):
-            attention_bias = config.qkv_bias
+    
+        if not mlp_only:
+            # Support abacusai/Smaug-72B-v0.1 with attention_bias
+            # Support internlm/internlm-7b with bias
+            attention_bias = getattr(config, "attention_bias", False) or getattr(
+                config, "bias", False)
+            bias_o_proj = attention_bias
+            # support internlm/internlm3-8b with qkv_bias
+            if hasattr(config, 'qkv_bias'):
+                attention_bias = config.qkv_bias
 
-        self.self_attn = LlamaAttention(
-            config=config,
-            hidden_size=self.hidden_size,
-            num_heads=config.num_attention_heads,
-            num_kv_heads=getattr(config, "num_key_value_heads",
-                                 config.num_attention_heads),
-            rope_theta=rope_theta,
-            rope_scaling=rope_scaling,
-            max_position_embeddings=max_position_embeddings,
-            quant_config=quant_config,
-            bias=attention_bias,
-            bias_o_proj=bias_o_proj,
-            cache_config=cache_config,
-            prefix=f"{prefix}.self_attn",
-        )
-        self.mlp = LlamaMLP(
-            hidden_size=self.hidden_size,
-            intermediate_size=config.intermediate_size,
-            hidden_act=config.hidden_act,
-            quant_config=quant_config,
-            bias=getattr(config, "mlp_bias", False),
-            prefix=f"{prefix}.mlp",
-        )
-        self.input_layernorm = RMSNorm(config.hidden_size,
-                                       eps=config.rms_norm_eps)
-        self.post_attention_layernorm = RMSNorm(config.hidden_size,
-                                                eps=config.rms_norm_eps)
+            self.self_attn = LlamaAttention(
+                config=config,
+                hidden_size=self.hidden_size,
+                num_heads=config.num_attention_heads,
+                num_kv_heads=getattr(config, "num_key_value_heads",
+                                    config.num_attention_heads),
+                rope_theta=rope_theta,
+                rope_scaling=rope_scaling,
+                max_position_embeddings=max_position_embeddings,
+                quant_config=quant_config,
+                bias=attention_bias,
+                bias_o_proj=bias_o_proj,
+                cache_config=cache_config,
+                prefix=f"{prefix}.self_attn",
+            )
+            self.input_layernorm = RMSNorm(config.hidden_size,
+                                        eps=config.rms_norm_eps)
+        
+        if not attn_only:
+            self.mlp = LlamaMLP(
+                hidden_size=self.hidden_size,
+                intermediate_size=config.intermediate_size,
+                hidden_act=config.hidden_act,
+                quant_config=quant_config,
+                bias=getattr(config, "mlp_bias", False),
+                prefix=f"{prefix}.mlp",
+            )
+            self.post_attention_layernorm = RMSNorm(config.hidden_size,
+                                                    eps=config.rms_norm_eps)
 
     def forward(
         self,
@@ -268,21 +276,23 @@ class LlamaDecoderLayer(nn.Module):
         hidden_states: torch.Tensor,
         residual: Optional[torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # Self Attention
-        if residual is None:
-            residual = hidden_states
-            hidden_states = self.input_layernorm(hidden_states)
-        else:
-            hidden_states, residual = self.input_layernorm(
-                hidden_states, residual)
-        hidden_states = self.self_attn(positions=positions,
-                                       hidden_states=hidden_states)
+        if hasattr(self, "self_attn"):
+            # Self Attention
+            if residual is None:
+                residual = hidden_states
+                hidden_states = self.input_layernorm(hidden_states)
+            else:
+                hidden_states, residual = self.input_layernorm(
+                    hidden_states, residual)
+            hidden_states = self.self_attn(positions=positions,
+                                        hidden_states=hidden_states)
 
-        # Fully Connected
-        hidden_states, residual = self.post_attention_layernorm(
-            hidden_states, residual)
-        hidden_states = self.mlp(hidden_states)
-        return hidden_states, residual
+        if hasattr(self, "mlp"):
+            # Fully Connected
+            hidden_states, residual = self.post_attention_layernorm(
+                hidden_states, residual)
+            hidden_states = self.mlp(hidden_states)
+            return hidden_states, residual
 
 
 @support_torch_compile
@@ -318,10 +328,13 @@ class LlamaModel(nn.Module):
             self.embed_tokens = PPMissingLayer()
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix: layer_type(config=config,
+            lambda prefix, attn_only, mlp_only: layer_type(config=config,
                                       cache_config=cache_config,
                                       quant_config=quant_config,
-                                      prefix=prefix),
+                                      prefix=prefix,
+                                      attn_only=attn_only,
+                                      mlp_only=mlp_only,
+                                      ),
             prefix=f"{prefix}.layers",
         )
         if get_pp_group().is_last_rank:
@@ -354,7 +367,7 @@ class LlamaModel(nn.Module):
             hidden_states = intermediate_tensors["hidden_states"]
             residual = intermediate_tensors["residual"]
 
-        for layer in self.layers[self.start_layer:self.end_layer]:
+        for layer in self.layers[math.floor(self.start_layer):math.ceil(self.end_layer)]:
             hidden_states, residual = layer(positions, hidden_states, residual)
 
         if not get_pp_group().is_last_rank:
@@ -413,6 +426,9 @@ class LlamaModel(nn.Module):
                 if is_pp_missing_parameter(name, self):
                     continue
 
+                if name not in params_dict:
+                    continue
+
                 param = params_dict[name]
                 weight_loader = param.weight_loader
                 weight_loader(param, loaded_weight, shard_id)
@@ -423,6 +439,9 @@ class LlamaModel(nn.Module):
                     continue
 
                 if is_pp_missing_parameter(name, self):
+                    continue
+
+                if name not in params_dict:
                     continue
 
                 param = params_dict[name]

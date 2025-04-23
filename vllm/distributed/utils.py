@@ -83,7 +83,7 @@ def get_pp_indices(num_hidden_layers: int, pp_rank: int,
     if partition_list_str is not None:
         try:
             partitions = [
-                int(layer) for layer in partition_list_str.split(",")
+                float(layer) for layer in partition_list_str.split(",")
             ]
         except ValueError as err:
             raise ValueError("Invalid partition string: {}".format(

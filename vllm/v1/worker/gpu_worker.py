@@ -270,8 +270,8 @@ class Worker(WorkerBase):
         if envs.VLLM_LOGGING_FILENAME:
             torch.cuda.synchronize()
             end_time = time.perf_counter()
-            logger.info("Rank: %d, Execution start time: %f, Execution end time: %f, Batch: %d, Batch size: %d, Execution time: %.1f, Prepare Time: %.1f, Sample Time: %.1f", self.rank,
-                        start_time, end_time, scheduler_output.mb, scheduler_output.total_num_scheduled_tokens, 1000 * (end_time - start_time), 1000*metadata["prepare_time"], 1000*metadata.get("sample_time", 0))
+            logger.info("Rank: %d, Execution start time: %f, Execution end time: %f, Batch: %d, Batch size: %d, Execution time: %.1f, Prepare Time: %.1f, Logits Time: %.1f, Sample Time: %.1f", self.rank,
+                        start_time, end_time, scheduler_output.mb, scheduler_output.total_num_scheduled_tokens, 1000 * (end_time - start_time), 1000*metadata["prepare_time"], 1000*metadata.get("logits_time", 0), 1000*metadata.get("sample_time", 0))
         if not get_pp_group().is_last_rank:
             assert isinstance(output, IntermediateTensors)
             send_start_time = time.perf_counter()

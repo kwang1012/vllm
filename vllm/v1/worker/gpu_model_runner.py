@@ -1011,11 +1011,16 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             # For mid-pipeline stages, return the hidden states.
             return hidden_states, {"prepare_time": prepare_time}
 
+        logits_time = time.perf_counter()
         hidden_states = hidden_states[:num_scheduled_tokens]
         sample_hidden_states = hidden_states[logits_indices]
+
         logits = self.model.compute_logits(sample_hidden_states, None)
 
+        torch.cuda.synchronize()
+        logits_time = time.perf_counter() - logits_time
         
+        sample_time = time.perf_counter()
         # Apply structured output bitmasks if present
         if scheduler_output.grammar_bitmask is not None:
             self.apply_grammar_bitmask(scheduler_output, logits)
@@ -1023,8 +1028,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         input_batch = self.input_batch[scheduler_output.mb]
         # Sample the next token and get logprobs if needed.
         sampling_metadata = input_batch.sampling_metadata
-        torch.cuda.synchronize()
-        sample_time = time.perf_counter()
         if not self.use_spec_decode:
             sampler_output = self.model.sample(
                 logits=logits,
@@ -1041,6 +1044,8 @@ class GPUModelRunner(LoRAModelRunnerMixin):
                                                     target_probs,
                                                     sampling_metadata)
 
+        torch.cuda.synchronize()
+        sample_time = time.perf_counter() - sample_time
         # TODO(woosuk): The following loop can be slow since it iterates over
         # the requests one by one. Optimize.
         for i, req_id in enumerate(input_batch.req_ids):
@@ -1087,8 +1092,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         else:
             spec_token_ids = self.generate_draft_token_ids(
                 valid_sampled_token_ids)
-        torch.cuda.synchronize()
-        sample_time = time.perf_counter() - sample_time
 
         return ModelRunnerOutput(
             req_ids=input_batch.req_ids,
@@ -1097,7 +1100,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             spec_token_ids=spec_token_ids,
             logprobs=logprobs_lists,
             prompt_logprobs_dict=prompt_logprobs_dict,
-        ), {"prepare_time": prepare_time, "sample_time": sample_time}
+        ), {"prepare_time": prepare_time, "logits_time": logits_time, "sample_time": sample_time}
 
     def generate_draft_token_ids(
         self,
@@ -1416,7 +1419,7 @@ class GPUModelRunner(LoRAModelRunnerMixin):
         del hidden_states, sampler_output
         self.encoder_cache.clear()
         gc.collect()
-
+    
     def capture_model(self) -> None:
         if not self.use_cuda_graph:
             logger.warning(

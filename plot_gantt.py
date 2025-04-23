@@ -2,6 +2,7 @@ import json
 import sys
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+import functools
 
 
 def main(filename):
@@ -10,7 +11,7 @@ def main(filename):
 
     stage_events = {}
     execution_events = {}
-    start_from = 0
+    start_from = 1000
     num_events = 50
     batch_sizes = []
     bs_to_exec_time = []
@@ -18,7 +19,9 @@ def main(filename):
     prep_time_dict = {}
     batch_exec_time_dict = {}
     batch_prep_time_dict = {}
+    batch_logits_time_dict = {}
     batch_sample_time_dict = {}
+    counter = {}
     for line in lines:
         line = line.strip()
         if "Execution start time" in line:
@@ -35,13 +38,15 @@ def main(filename):
             mb = info[3].split(":")[1].strip()
             bs = int(info[4].split(":")[1].strip())
             prep_time = float(info[6].split(":")[1].strip())
-            sample_time = float(info[7].split(":")[1].strip())
+            logits_time = float(info[7].split(":")[1].strip())
+            sample_time = float(info[8].split(":")[1].strip())
             exec_time = end_time - start_time
             bs_to_exec_time.append((bs, exec_time))
             if rank not in batch_exec_time_dict:
                 batch_exec_time_dict[rank] = {}
                 batch_prep_time_dict[rank] = {}
                 batch_sample_time_dict[rank] = {}
+                batch_logits_time_dict[rank] = {}
             if bs not in exec_time_dict:
                 exec_time_dict[bs] = []
                 prep_time_dict[bs] = []
@@ -49,11 +54,14 @@ def main(filename):
                 batch_exec_time_dict[rank][bs] = []
                 batch_prep_time_dict[rank][bs] = []
                 batch_sample_time_dict[rank][bs] = []
+                batch_logits_time_dict[rank][bs] = []
             exec_time_dict[bs].append(1000*exec_time - prep_time)
             prep_time_dict[bs].append(prep_time)
             batch_exec_time_dict[rank][bs].append(1000*exec_time - prep_time)
             batch_prep_time_dict[rank][bs].append(prep_time)
             batch_sample_time_dict[rank][bs].append(sample_time)
+            batch_logits_time_dict[rank][bs].append(logits_time)
+
             execution_events[rank] += 1
             if start_from <= execution_events[rank] < start_from + num_events:
                 stage_events[rank].append(
@@ -98,20 +106,25 @@ def main(filename):
                 stage_events[rank].append(
                     (start_time, end_time - start_time, "tab:green", ""))
 
-    for rank, _exec_time_dict in batch_exec_time_dict.items():
-        print("=====RANK", rank, "=====")
-        for bs, exec_time in sorted(_exec_time_dict.items()):
-            prep_time = batch_prep_time_dict[rank][bs]
+    print("# iterations:", execution_events[0])
+    def cmp(a, b):
+        return len(b[1]) - len(a[1])
+    for rank, _exec_time_dict in sorted(batch_exec_time_dict.items()):
+        print("===== RANK", rank, "=====")
+        bs, exec_time = sorted(_exec_time_dict.items(), key=functools.cmp_to_key(cmp))[0]
+        avg_exec_time = sum(exec_time) / len(exec_time)
+        avg_prep_time = sum(batch_prep_time_dict[rank][bs]) / len(
+            batch_prep_time_dict[rank][bs])
+        if rank == len(stage_events) - 1:
+            avg_sample_time = sum(batch_sample_time_dict[rank][bs]) / len(
+                batch_sample_time_dict[rank][bs])
+            avg_logits_time = sum(batch_logits_time_dict[rank][bs]) / len(
+                batch_logits_time_dict[rank][bs])
             print(
-                f"{bs}({len(exec_time)}){sum(exec_time) / len(exec_time):.1f}ms {sum(prep_time) / len(prep_time):.1f}ms {sum(batch_sample_time_dict[rank][bs]) / len(batch_sample_time_dict[rank][bs]):.1f}ms")
-    print("=====ALL RANKS=====")
-    for bs, exec_time in sorted(exec_time_dict.items()):
-        prep_time = prep_time_dict[bs]
-        print(f"{bs}({len(exec_time)}){sum(exec_time) / len(exec_time):.1f}ms {sum(prep_time) / len(prep_time):.1f}ms")
-    # print("Stage events:", batch_sizes)
-    # for batch in batch_sizes:
-    #     mb, bs, total_tokens = batch
-    #     print(f"mb: {mb}, bs: {bs}, total_tokens: {total_tokens}")
+                f"BS: {bs}, Exec: {avg_exec_time:.1f}ms(Prep:{avg_prep_time:.1f}ms,Logits:{avg_logits_time:.1f}ms,Sample:{avg_sample_time:.1f}ms)")
+        else:
+            print(
+                f"BS: {bs}, Exec: {avg_exec_time:.1f}ms(Prep:{avg_prep_time:.1f}ms)")
     fig, ax = plt.subplots(figsize=(48, 5))
     start_timestamp = min(e[0]
                           for events in stage_events.values() for e in events)
@@ -165,18 +178,18 @@ def main(filename):
     ax.legend(handles=handles, fontsize=18)
     fig.savefig(f"{filename}-gantt.png", bbox_inches="tight")
 
-    fig, ax = plt.subplots()
-    ax.scatter(
-        [bs for bs, _ in bs_to_exec_time],
-        [exec_time for _, exec_time in bs_to_exec_time],
-        marker="o",
-        linestyle="-",
-        color="tab:blue",
-    )
-    ax.set_xlabel("Batch Size", fontsize=18)
-    ax.set_ylabel("Execution Time (s)", fontsize=18)
-    ax.set_title("Batch Size vs Execution Time", fontsize=18)
-    fig.savefig(f"{filename}-exec_time.png", bbox_inches="tight")
+    # fig, ax = plt.subplots()
+    # ax.scatter(
+    #     [bs for bs, _ in bs_to_exec_time],
+    #     [exec_time for _, exec_time in bs_to_exec_time],
+    #     marker="o",
+    #     linestyle="-",
+    #     color="tab:blue",
+    # )
+    # ax.set_xlabel("Batch Size", fontsize=18)
+    # ax.set_ylabel("Execution Time (s)", fontsize=18)
+    # ax.set_title("Batch Size vs Execution Time", fontsize=18)
+    # fig.savefig(f"{filename}-exec_time.png", bbox_inches="tight")
 
 
 if __name__ == "__main__":

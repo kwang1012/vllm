@@ -2,6 +2,7 @@
 
 import itertools
 from dataclasses import dataclass, field
+import math
 from typing import (Callable, Dict, Iterable, List, Literal, Mapping, Optional,
                     Protocol, Set, Tuple, Union, overload)
 
@@ -422,7 +423,7 @@ def merge_multimodal_embeddings(
     Merge ``multimodal_embeddings`` into ``inputs_embeds`` by overwriting the
     positions in ``inputs_embeds`` corresponding to placeholder tokens in
     ``input_ids``.
-    
+
     ``placeholder_token_id`` can be a list of token ids (e.g, token ids 
     of img_start, img_break, and img_end tokens) when needed: This means 
     the order of these tokens in the ``input_ids`` MUST MATCH the order of 
@@ -435,7 +436,7 @@ def merge_multimodal_embeddings(
     - I is image embedding token
     - B is image break token
     - E is image end token.
-    
+
     Then the image embeddings (that correspond to I's) from vision encoder 
     must be padded with embeddings of S, B, and E in the same order of 
     input_ids for a correct embedding merge.
@@ -461,7 +462,7 @@ def merge_multimodal_embeddings(
 
 class LayerFn(Protocol):
 
-    def __call__(self, prefix: str) -> torch.nn.Module:
+    def __call__(self, prefix: str, attn_only: str, mlp_only: str) -> torch.nn.Module:
         ...
 
 
@@ -553,11 +554,21 @@ def make_layers(
     start_layer, end_layer = get_pp_indices(num_hidden_layers,
                                             get_pp_group().rank_in_group,
                                             get_pp_group().world_size)
+
+    def _is_attn_only(idx: int, end_layer: float) -> bool:
+        return idx == math.ceil(end_layer) and idx != end_layer
+
+    def _is_mlp_only(idx: int, start_layer: float) -> bool:
+        return idx == math.floor(start_layer) and idx != start_layer
     modules = torch.nn.ModuleList(
-        [PPMissingLayer() for _ in range(start_layer)] + [
-            maybe_offload_to_cpu(layer_fn(prefix=f"{prefix}.{idx}"))
-            for idx in range(start_layer, end_layer)
-        ] + [PPMissingLayer() for _ in range(end_layer, num_hidden_layers)])
+        [PPMissingLayer() for _ in range(math.floor(start_layer))] + [
+            maybe_offload_to_cpu(layer_fn(
+                prefix=f"{prefix}.{idx}", 
+                attn_only=_is_attn_only(idx, end_layer), 
+                mlp_only=_is_mlp_only(idx, start_layer),
+            ))
+            for idx in range(math.floor(start_layer), math.ceil(end_layer))
+        ] + [PPMissingLayer() for _ in range(math.ceil(end_layer), num_hidden_layers)])
     return start_layer, end_layer, modules
 
 
