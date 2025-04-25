@@ -72,6 +72,7 @@ class Scheduler:
         # Priority queues for requests.
         self.waiting: deque[Request] = deque()
         self.running: list[Request] = []
+        self.num_preempted_tokens: int = 0
         # The requests that have been scheduled and are being executed
         # by the executor.
         self.scheduled_req_ids: set[str] = set()
@@ -145,7 +146,9 @@ class Scheduler:
         # 2. Set token budget to num_total_tokens by pp_size
         pp_size = self.parallel_config.pipeline_parallel_size
         token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
+        preempted_token_budget = math.ceil(min(self.num_preempted_tokens, self.max_num_scheduled_tokens) / pp_size)
         # print(f"======={mb=}, {token_budget=}, {num_total_new_tokens=}======")
+        # TODO: need to consider preempted requests
         
         # Encoder-related.
         scheduled_encoder_inputs: dict[str, list[int]] = {}
@@ -211,6 +214,7 @@ class Scheduler:
                     del self.total_num_new_tokens[preempted_req.request_id]
                     self.waiting.appendleft(preempted_req)
                     preempted_reqs.append(preempted_req)
+                    self.num_preempted_tokens += preempted_req.num_tokens_with_spec
                     if preempted_req == request:
                         # No more request to preempt.
                         can_schedule = False
@@ -275,6 +279,7 @@ class Scheduler:
 
         # Next, schedule the WAITING requests.
         if not preempted_reqs:
+            token_budget = max(token_budget, preempted_token_budget)
             while self.waiting and token_budget > 0:
                 if len(self.running) == self.max_num_running_reqs:
                     break
@@ -357,6 +362,7 @@ class Scheduler:
                 if request.status == RequestStatus.WAITING:
                     scheduled_new_reqs.append(request)
                 elif request.status == RequestStatus.PREEMPTED:
+                    self.num_preempted_tokens -= request.num_tokens_with_spec
                     scheduled_resumed_reqs.append(request)
                 else:
                     raise RuntimeError(
@@ -462,14 +468,6 @@ class Scheduler:
                 prefill_dict[num_scheduled_tokens[req.request_id]] = 0
             prefill_dict[num_scheduled_tokens[req.request_id]] += 1
         
-        # prefill_count = sum(num_tokens * count for num_tokens, count in prefill_dict.items())
-        # if prefill_count == 0:
-        #     prefill_str = "0"
-        # else:
-        #     prefill_str = f"{prefill_count}(" + "+".join(
-        #         f"{num_tokens}*{count}" for num_tokens, count in prefill_dict.items()) + ")"
-        # decode_count = len(scheduled_running_reqs)
-        # print(f"Prefills: {prefill_str}, Decodes: {decode_count}, Num scheduled tokens: {total_num_scheduled_tokens}")
         # if envs.VLLM_LOGGING_FILENAME:
         #     logger.info("Batch: %s, Num scheduled tokens: %s, Total schedulable tokens: %s", mb, total_num_scheduled_tokens, num_total_new_tokens)
         self.finished_req_ids = set()
@@ -586,7 +584,6 @@ class Scheduler:
 
         new_running: list[Request] = []
         outputs: list[EngineCoreOutput] = []
-        mb = scheduler_output.mb
         # NOTE(woosuk): As len(self.running) can be up to 1K or more, the below
         # loop can be a performance bottleneck. We should do our best to avoid
         # expensive operations inside the loop.
@@ -699,9 +696,6 @@ class Scheduler:
                 count_dict[count] = 0
             count_dict[count] += 1
         
-        req_count = sum(num_tokens * count for num_tokens, count in count_dict.items())
-        # print(f"Update {mb=}, total_num_new_tokens={req_count}({'+'.join(f'{num_tokens}*{count}' for num_tokens, count in count_dict.items())})")
-
         self.running = new_running
         return EngineCoreOutputs(
             outputs=outputs,

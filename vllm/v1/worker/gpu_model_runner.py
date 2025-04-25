@@ -1043,7 +1043,6 @@ class GPUModelRunner(LoRAModelRunnerMixin):
             sampler_output = self.rejection_sampler(draft_token_ids,
                                                     target_probs,
                                                     sampling_metadata)
-
         torch.cuda.synchronize()
         sample_time = time.perf_counter() - sample_time
         # TODO(woosuk): The following loop can be slow since it iterates over

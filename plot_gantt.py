@@ -21,7 +21,6 @@ def main(filename):
     batch_prep_time_dict = {}
     batch_logits_time_dict = {}
     batch_sample_time_dict = {}
-    counter = {}
     for line in lines:
         line = line.strip()
         if "Execution start time" in line:
@@ -35,11 +34,23 @@ def main(filename):
                 execution_events[rank] = 0
             start_time = float(info[1].split(":")[1].strip())
             end_time = float(info[2].split(":")[1].strip())
-            mb = info[3].split(":")[1].strip()
-            bs = int(info[4].split(":")[1].strip())
-            prep_time = float(info[6].split(":")[1].strip())
-            logits_time = float(info[7].split(":")[1].strip())
-            sample_time = float(info[8].split(":")[1].strip())
+            try:
+                send_start_time = float(info[3].split(":")[1].strip())
+                send_end_time = float(info[4].split(":")[1].strip())
+            except:
+                send_start_time = end_time
+                send_end_time = end_time
+            try:
+                recv_start_time = float(info[5].split(":")[1].strip())
+                recv_end_time = float(info[6].split(":")[1].strip())
+            except:
+                recv_start_time = start_time
+                recv_end_time = start_time
+            mb = info[7].split(":")[1].strip()
+            bs = int(info[8].split(":")[1].strip())
+            prep_time = float(info[9].split(":")[1].strip())
+            logits_time = float(info[10].split(":")[1].strip())
+            sample_time = float(info[11].split(":")[1].strip())
             exec_time = end_time - start_time
             bs_to_exec_time.append((bs, exec_time))
             if rank not in batch_exec_time_dict:
@@ -55,7 +66,7 @@ def main(filename):
                 batch_prep_time_dict[rank][bs] = []
                 batch_sample_time_dict[rank][bs] = []
                 batch_logits_time_dict[rank][bs] = []
-            exec_time_dict[bs].append(1000*exec_time - prep_time)
+            exec_time_dict[bs].append(1000*exec_time)
             prep_time_dict[bs].append(prep_time)
             batch_exec_time_dict[rank][bs].append(1000*exec_time - prep_time)
             batch_prep_time_dict[rank][bs].append(prep_time)
@@ -65,7 +76,11 @@ def main(filename):
             execution_events[rank] += 1
             if start_from <= execution_events[rank] < start_from + num_events:
                 stage_events[rank].append(
+                    (recv_start_time, recv_end_time - recv_start_time, "tab:green", ""))
+                stage_events[rank].append(
                     (start_time, end_time - start_time, "tab:blue", mb))
+                stage_events[rank].append(
+                    (send_start_time, send_end_time - send_start_time, "tab:orange", ""))
 
         elif "Num scheduled tokens" in line:
             info = line[line.find("] ") + 2:]
@@ -76,35 +91,24 @@ def main(filename):
             total_tokens = int(info[2].split(":")[1].strip())
             batch_sizes.append((mb, bs, total_tokens))
 
-        elif "Send start time" in line:
-            info = line[line.find("] ") + 2:]
-            info = info.split(",")
-            rank = int(info[0].split(":")[1].strip())
-
-            if rank not in stage_events:
-                stage_events[rank] = []
-                execution_events[rank] = 0
-
-            start_time = float(info[1].split(":")[1].strip())
-            end_time = float(info[2].split(":")[1].strip())
-            if start_from <= execution_events[rank] < start_from + num_events:
-                stage_events[rank].append(
-                    (start_time, end_time - start_time, "tab:orange", ""))
-
-        elif "Recv start time" in line:
-            info = line[line.find("] ") + 2:]
-            info = info.split(",")
-            rank = int(info[0].split(":")[1].strip())
-
-            if rank not in stage_events:
-                stage_events[rank] = []
-                execution_events[rank] = 0
-
-            start_time = float(info[1].split(":")[1].strip())
-            end_time = float(info[2].split(":")[1].strip())
-            if start_from <= execution_events[rank] < start_from + num_events:
-                stage_events[rank].append(
-                    (start_time, end_time - start_time, "tab:green", ""))
+    # rank 0: _ e s _ e s
+    # rank 1: _ _ _ r e s r e s
+    # rank 2: _ _ _ _ _ _ r e s r e s
+    # rank 3: _ _ _ _ _ _ _ _ _ r e s r e s
+    for rank, events in stage_events.items():
+        if rank == len(stage_events) - 1:
+            break
+        for i, event in enumerate(events):
+            if "orange" in event[2]:
+                send_start_time = event[0]
+                send_end_time = event[0] + event[1]
+                recv_start_time = stage_events[rank+1][i-2][0]
+                recv_end_time = stage_events[rank+1][i-2][0] + stage_events[rank+1][i-2][1]
+                overlap_interval = (max(send_start_time, recv_start_time),
+                                    min(send_end_time, recv_end_time))
+                events[i] = (overlap_interval[0], overlap_interval[1] - overlap_interval[0],
+                             event[2], event[3])
+                stage_events[rank+1][i-2] = (overlap_interval[0], overlap_interval[1] - overlap_interval[0], stage_events[rank][i-2][2], stage_events[rank][i-2][3])
 
     print("# iterations:", execution_events[0])
     def cmp(a, b):
@@ -115,7 +119,7 @@ def main(filename):
         avg_exec_time = sum(exec_time) / len(exec_time)
         avg_prep_time = sum(batch_prep_time_dict[rank][bs]) / len(
             batch_prep_time_dict[rank][bs])
-        if rank == len(stage_events) - 1:
+        if batch_logits_time_dict[rank]:
             avg_sample_time = sum(batch_sample_time_dict[rank][bs]) / len(
                 batch_sample_time_dict[rank][bs])
             avg_logits_time = sum(batch_logits_time_dict[rank][bs]) / len(
@@ -140,6 +144,7 @@ def main(filename):
     # for i, line in enumerate(green_lines):
     #     if i != 0:
     #         itl.append(line - green_lines[i-1])
+
 
     for i, events in enumerate(stage_events):
         colors = stage_events_colors[i]

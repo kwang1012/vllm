@@ -252,14 +252,16 @@ class Worker(WorkerBase):
         scheduler_output: "SchedulerOutput",
     ) -> Optional[ModelRunnerOutput]:
         intermediate_tensors = None
+        recv_start_time = None
+        recv_end_time = None
+        send_start_time = None
+        send_end_time = None
         if not get_pp_group().is_first_rank:
             recv_start_time = time.perf_counter()
             intermediate_tensors = IntermediateTensors(
                 get_pp_group().recv_tensor_dict(
                     all_gather_group=get_tp_group()))
-            if envs.VLLM_LOGGING_FILENAME:
-                logger.info("Rank: %d, Recv start time: %f, Recv end time: %f, Batch: %d",
-                            self.rank, recv_start_time, time.perf_counter(), scheduler_output.mb)
+            recv_end_time = time.perf_counter()
 
         if envs.VLLM_LOGGING_FILENAME:
             torch.cuda.synchronize()
@@ -270,16 +272,41 @@ class Worker(WorkerBase):
         if envs.VLLM_LOGGING_FILENAME:
             torch.cuda.synchronize()
             end_time = time.perf_counter()
-            logger.info("Rank: %d, Execution start time: %f, Execution end time: %f, Batch: %d, Batch size: %d, Execution time: %.1f, Prepare Time: %.1f, Logits Time: %.1f, Sample Time: %.1f", self.rank,
-                        start_time, end_time, scheduler_output.mb, scheduler_output.total_num_scheduled_tokens, 1000 * (end_time - start_time), 1000*metadata["prepare_time"], 1000*metadata.get("logits_time", 0), 1000*metadata.get("sample_time", 0))
         if not get_pp_group().is_last_rank:
             assert isinstance(output, IntermediateTensors)
             send_start_time = time.perf_counter()
             get_pp_group().send_tensor_dict(output.tensors,
                                             all_gather_group=get_tp_group())
-            if envs.VLLM_LOGGING_FILENAME:
-                logger.info("Rank: %d, Send start time: %f, Send end time: %f, Batch: %d",
-                            self.rank, send_start_time, time.perf_counter(), scheduler_output.mb)
+            send_end_time = time.perf_counter()
+
+
+        if envs.VLLM_LOGGING_FILENAME:
+            logger.info("Rank: %d, "
+                        "Execution start time: %f, "
+                        "Execution end time: %f, "
+                        "Send start time: %s, "
+                        "Send end time: %s, "
+                        "Recv start time: %s, "
+                        "Recv end time: %s, "
+                        "Batch: %d, "
+                        "Batch size: %d, "
+                        "Prepare Time: %.1f, "
+                        "Logits Time: %.1f, "
+                        "Sample Time: %.1f",
+                        self.rank,
+                        start_time,
+                        end_time,
+                        send_start_time,
+                        send_end_time,
+                        recv_start_time,
+                        recv_end_time,
+                        scheduler_output.mb,
+                        scheduler_output.total_num_scheduled_tokens,
+                        1000*metadata["prepare_time"],
+                        1000*metadata.get("logits_time", 0),
+                        1000*metadata.get("sample_time", 0)
+                        )
+        if not get_pp_group().is_last_rank:
             return None
 
         assert isinstance(output, ModelRunnerOutput)
