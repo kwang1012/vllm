@@ -146,7 +146,7 @@ class Scheduler:
         # 2. Set token budget to num_total_tokens by pp_size
         pp_size = self.parallel_config.pipeline_parallel_size
         token_budget = math.ceil(min(num_total_new_tokens, self.max_num_scheduled_tokens) / pp_size)
-        preempted_token_budget = math.ceil(min(self.num_preempted_tokens, self.max_num_scheduled_tokens) / pp_size)
+        preempted_token_budget = math.ceil(min(self.num_preempted_tokens, self.max_num_scheduled_tokens - token_budget) / pp_size)
         # print(f"======={mb=}, {token_budget=}, {num_total_new_tokens=}======")
         # TODO: need to consider preempted requests
         

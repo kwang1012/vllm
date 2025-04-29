@@ -462,7 +462,7 @@ def merge_multimodal_embeddings(
 
 class LayerFn(Protocol):
 
-    def __call__(self, prefix: str, attn_only: str, mlp_only: str) -> torch.nn.Module:
+    def __call__(self, prefix: str, attn_only: Optional[str] = None, mlp_only: Optional[str] = None) -> torch.nn.Module:
         ...
 
 
@@ -564,8 +564,8 @@ def make_layers(
         [PPMissingLayer() for _ in range(math.floor(start_layer))] + [
             maybe_offload_to_cpu(layer_fn(
                 prefix=f"{prefix}.{idx}", 
-                attn_only=_is_attn_only(idx, end_layer), 
-                mlp_only=_is_mlp_only(idx, start_layer),
+                # attn_only=_is_attn_only(idx, end_layer), 
+                # mlp_only=_is_mlp_only(idx, start_layer),
             ))
             for idx in range(math.floor(start_layer), math.ceil(end_layer))
         ] + [PPMissingLayer() for _ in range(math.ceil(end_layer), num_hidden_layers)])
