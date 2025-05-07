@@ -205,9 +205,9 @@ async def main(args):
 
     prompts = [request[0] for request in requests]
 
-    prompts = [
-        "How is the weather in Champaign?",
-    ] * args.num_prompts
+    # prompts = [
+    #     "How is the weather in Champaign?",
+    # ] * args.num_prompts
 
     pbar = tqdm(
         total=len(prompts),

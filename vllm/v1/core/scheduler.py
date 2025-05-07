@@ -207,6 +207,7 @@ class Scheduler:
                     if preempted_req is None:
                         can_schedule = False
                         break
+                    logger.info("Preempting request %s", preempted_req.request_id)
                     self.kv_cache_manager.free(preempted_req)
                     preempted_req.status = RequestStatus.PREEMPTED
                     preempted_req.num_computed_tokens = 0

@@ -6,8 +6,9 @@ ALL_MODELS=(
   "meta-llama/Meta-Llama-3.1-8B-Instruct"
   "Qwen/QwQ-32B"
   "meta-llama/Llama-3.1-70B-Instruct"
+  "bigscience/bloom"
 )
-ALL_MODEL_SIZES=(1b 8b 32b 70b)
+ALL_MODEL_SIZES=(1b 8b 32b 70b 176b)
 ALL_BATCH_SIZES=(8 16 32 64 128 256 512 1024 2048 4096)
 ALL_NUM_GPUS=(1 2 4 8)
 
@@ -17,6 +18,7 @@ declare -A MODEL_SIZE_MAP=(
   ["meta-llama/Meta-Llama-3.1-8B-Instruct"]=8b
   ["Qwen/QwQ-32B"]=32b
   ["meta-llama/Llama-3.1-70B-Instruct"]=70b
+  ["bigscience/bloom"]=176b
 )
 
 declare -A MODEL_SHORTCUT_MAP=(
@@ -24,12 +26,13 @@ declare -A MODEL_SHORTCUT_MAP=(
   [8b]="meta-llama/Meta-Llama-3.1-8B-Instruct"
   [32b]="Qwen/QwQ-32B"
   [70b]="meta-llama/Llama-3.1-70B-Instruct"
+  [176b]="bigscience/bloom"
 )
 
 # Default selections
 SELECTED_MODELS=("meta-llama/Llama-3.1-70B-Instruct")
-SELECTED_BATCH_SIZES=(8 16 32 64 128 256 512 1024)
-SELECTED_NUM_GPUS=(4 8)
+SELECTED_BATCH_SIZES=(8 16 32 64 128 256 512 1024 2048 4096)
+SELECTED_NUM_GPUS=(1 2 4 8)
 
 parse_args() {
   while [[ $# -gt 0 ]]; do
@@ -126,6 +129,11 @@ main() {
 
     for batch_size in "${SELECTED_BATCH_SIZES[@]}"; do
       for num_gpus in "${SELECTED_NUM_GPUS[@]}"; do
+
+        if (( num_gpus < 8 )) && [[ "$model_size" == "176b" ]]; then
+          echo "Skipping 176B with #GPUs < 8"
+          continue
+        fi
 
         if (( num_gpus == 1 )) && [[ "$model_size" == "70b" ]]; then
           echo "Skipping 70B on 1 GPU"

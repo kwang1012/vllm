@@ -328,12 +328,12 @@ class LlamaModel(nn.Module):
             self.embed_tokens = PPMissingLayer()
         self.start_layer, self.end_layer, self.layers = make_layers(
             config.num_hidden_layers,
-            lambda prefix, attn_only, mlp_only: layer_type(config=config,
+            lambda prefix: layer_type(config=config,
                                       cache_config=cache_config,
                                       quant_config=quant_config,
                                       prefix=prefix,
-                                      attn_only=attn_only,
-                                      mlp_only=mlp_only,
+                                    #   attn_only=attn_only,
+                                    #   mlp_only=mlp_only,
                                       ),
             prefix=f"{prefix}.layers",
         )
